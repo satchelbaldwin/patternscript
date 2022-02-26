@@ -88,9 +88,26 @@ impl Lexer {
                 self.lookahead_cursor = self.cursor + 1;
                 let initial = chars[self.cursor];
 
-                let exact_match = |word: &str| -> bool {
+                let mut exact_match = |word: &str| -> bool {
                     let length: usize = word.len();
+
+                    if self.cursor + length > chars.len() {
+                        return false;
+                    }
+
                     let found: String = chars[self.cursor..self.cursor + length].iter().collect();
+
+                    if word == found {
+                        if chars[self.cursor + length] == ';'
+                            || chars[self.cursor + length] == ' '
+                            || chars[self.cursor + length] == '('
+                            || chars[self.cursor + length] == '{'
+                            || word == "=="
+                            || word == "..."
+                        {
+                            self.cursor = self.cursor + length - 1;
+                        }
+                    }
                     word == found
                 };
 
@@ -108,6 +125,7 @@ impl Lexer {
                     _ if exact_match("==") => Token::Operator(Op::Test),
                     '=' => Token::Assign,
                     _ if exact_match("//") => {
+                        println!("Comment");
                         while chars[self.lookahead_cursor] != '\n' {
                             self.lookahead_cursor += 1;
                         }
@@ -143,7 +161,7 @@ impl Lexer {
                         if chars[self.lookahead_cursor] == '.' {
                             // handle case x...y where x. .. y is wrong
                             if chars[self.lookahead_cursor + 1] == '.' {
-                                self.cursor = self.lookahead_cursor - 1;
+                                self.cursor = self.lookahead_cursor;
                                 return Some(Token::Number(full_number));
                             }
                             full_number.push(chars[self.lookahead_cursor]);
@@ -171,17 +189,21 @@ impl Lexer {
                             }
                             self.lookahead_cursor = self.lookahead_cursor + 1;
                         }
+                        self.cursor = self.lookahead_cursor;
                         Token::String(full_string)
                     }
                     c if initial.is_ascii_alphabetic() => {
                         let mut full_id: String = String::new();
                         full_id.push(c); // first digit
 
-                        let c = chars[self.lookahead_cursor];
+                        let mut c = chars[self.lookahead_cursor];
                         while c.is_alphanumeric() || c == '_' || c == '-' {
                             full_id.push(chars[self.lookahead_cursor]);
                             self.lookahead_cursor = self.lookahead_cursor + 1;
+                            c = chars[self.lookahead_cursor];
                         }
+
+                        self.cursor = self.lookahead_cursor - 1;
 
                         Token::Id(full_id)
                     }
@@ -191,7 +213,7 @@ impl Lexer {
                     }
                     c => Token::LexerError(c),
                 };
-
+                self.cursor += 1;
                 return Some(token);
             }
             None => None,
