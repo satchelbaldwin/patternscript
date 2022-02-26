@@ -1,9 +1,6 @@
 mod lexer;
-mod parser;
-mod parsetable;
 
 use lexer::{Lexer, Token};
-use parser::Parser;
 use std::env;
 use std::fs;
 use std::process;
@@ -14,22 +11,15 @@ fn main() {
     println!("{:?}", args);
 
     if args.len() != 2 {
-        println!("usage: ./lrjson file");
+        println!("usage: ./??? file");
         process::exit(1);
     }
     let contents = fs::read_to_string(&args[1]);
     let mut lexer = Lexer::new(contents.unwrap());
-    let mut token = lexer.next_token(true);
+    let mut token = lexer.next_token();
     while token != Some(Token::EOF) {
-        println!("{:?}", token);
-        token = lexer.next_token(true);
+        println!("{:?}", token.unwrap());
+        token = lexer.next_token();
     }
-    println!("{:?}", token);
-
-    println!("\n\n--------------\n\n");
-
-    let contents = fs::read_to_string(&args[1]);
-    let mut parser: Parser = Parser::new(Lexer::new(contents.unwrap()));
-    let result = parser.step();
-    println!("{:?}", result);
+    println!("{:?}", token.unwrap());
 }

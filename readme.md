@@ -1,41 +1,110 @@
 # ps
 
+## prior work
+
+the venerable (bulletml)[https://www.asahi-net.or.jp/~cs8k-cyu/bulletml/index_e.html]
+visualizer ideas and reference patterns to compare to (from this implementation)[https://github.com/emillon/bulletml]
+
+## the language
+
 ```
 comment := // until EOL (\n) (lexer ignores, not part of grammar)
 
-id := [a-zA-Z]+[a-zA-Z0-9]*
-num := int | float
+id := [a-zA-Z]+[a-zA-Z0-9]*     // lvalues
+num := int 
+     | float              
 int := [0-9]*
 float := [0-9]*.([0-9]*)?
 
-block := stmt | { stmts } 
+rvalue := num 
+        | string 
+        | '"' [a-zA-Z0-9]* '"' 
 
-stmts := ε | stmt stmts
+expression = rvalue | expr | function_call | time
+time := int frames | float seconds
 
-stmt := ex
-      | pattern id 
+test := test == bool 
+      | bool
+bool := bool and expr
+      | bool or expr
+      | expr
+expr := expr + term 
+      | expr - term 
+      | term
+term := term * factor 
+      | term / factor 
+      | factor
+factor := exp ^ factor 
+        | exp
+exp := rvalue 
+     | '(' test ')'
+
+block := stmt ; 
+       | '{' stmt { ';' stmt } '}' 
+
+args := expression { , expression }
+argdef := id { , id }
+
+function_call := id '(' args ')'
+
+range := int '...' int 
+
+for_decl := id = range { , id = range }
+
+cond := unless | when
+
+for_block := for '(' for_decl ')' [ cond '(' expr ')' ]  block
+
+stmt := pattern id '=' block
+      | bullet id '=' block 
+      | path id '(' argdef ')' '=' block
+      | id '=' expression;
+      | id '=' args; // tuple
+      | wait time;
+      | for_block
 ```
 
 
 example: 
 
 ```
-pattern phase1 {
-     iteration_type = time;
-     length = 6.0; // time in seconds
-     actions {
-          do (n: 5) times unless (n = 3) {
-               
-          }
-          delay 0.5;
-          do (i: 3, j: 3) times unless (i = 1 or j = 1) {
+bullet mid_sized = {
+     sprite = "gameasset";
+     hitbox = (4, 4);
+     color = (255, 255, 0);
+}
 
+path downward_s_curve(t, speed, offset) = {
+     x = (50 * sin(t)) + offset;
+     y = t * speed;
+}
+
+pattern phase1 = {
+     iteration_type = time;  // time instead of a cycle count
+     length = 6.0 seconds;           // time in seconds
+     actions = {
+          let origin = entity_position + (0, 20);
+
+          for (n = 0...5) {
+               let angle = towards_player;
+               spawn {
+                    bullet = mid_sized,
+                    position = origin,
+                    direction = angle + n * 20,        // should handle precedence correctly here
+                    path = simple,
+                    speed = 200,
+               }
+               wait 4 frames;
           }
-          delay 0.5;
+          wait 0.5 seconds;
+
+          for (i = 0...3, j = 0...3) unless (i == 1 and j == 1) {
+               spawn {
+                    bullet = mid_sized,
+                    path = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))), 
+               }
+          }
+          wait 0.5 seconds;
      }
 }
-
-pattern phase2 {
-     iteration_type count;
-
-}
+```

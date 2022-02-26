@@ -1,25 +1,54 @@
-use ordered_float::NotNaN;
-
 #[derive(Debug, PartialEq, Hash, Clone)]
-pub enum Token {
-    BeginArray,     // [
-    BeginObject,    // {
-    EndArray,       // ]
-    EndObject,      // }
-    NameSeparator,  // :
-    ValueSeparator, // ,
-    Number(NotNaN<f64>),
-    NumberMatch, // Not a real number, but in place of "Any number" in the table
-    String(String),
-    StringMatch, // Not a real string, but in place of "Any string" in the table
-    LexerError(char),
-    True,
-    False,
-    Null,
-    EOF,
+
+pub enum Op {
+    Test,
+    And,
+    Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Exp,
 }
 
-impl Eq for Token {}
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Condition {
+    Unless,
+    When,
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Keyword {
+    For,
+    Wait,
+    Spawn,
+    Bullet,
+    Path,
+    Pattern,
+    Let,
+    Seconds,
+    Frames,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Token {
+    Id(String),
+    Number(String),
+    String(String),
+    OpenParen,
+    CloseParen,
+    OpenBlock,
+    CloseBlock,
+    Comma,
+    Operator(Op),
+    EOF,
+    RangeSeparator,
+    Assign,
+    Semicolon,
+    Keyword(Keyword),
+    Condition(Condition),
+    LexerError(char),
+}
 
 pub struct Lexer {
     source: String,
@@ -40,21 +69,67 @@ impl Lexer {
         lexer
     }
 
-    pub fn next_token(&mut self, shift: bool) -> Option<Token> {
-        //println!("next token: {}", shift);
+    pub fn lookahead(&mut self, n: u32) -> Option<Token> {
+        let previous_cursor = self.cursor;
+        for _ in [0..n] {
+            let _ = self.next_token();
+        }
+        let result = self.next_token();
+        self.cursor = previous_cursor;
+        result
+    }
+
+    pub fn next_token(&mut self) -> Option<Token> {
         match self.characters {
             Some(ref chars) => {
                 if self.cursor >= chars.len() {
                     return Some(Token::EOF);
                 }
+                self.lookahead_cursor = self.cursor + 1;
                 let initial = chars[self.cursor];
+
+                let exact_match = |word: &str| -> bool {
+                    let length: usize = word.len();
+                    let found: String = chars[self.cursor..self.cursor + length].iter().collect();
+                    word == found
+                };
+
                 let token: Token = match initial {
-                    '[' => Token::BeginArray,
-                    '{' => Token::BeginObject,
-                    ']' => Token::EndArray,
-                    '}' => Token::EndObject,
-                    ':' => Token::NameSeparator,
-                    ',' => Token::ValueSeparator,
+                    '(' => Token::OpenParen,
+                    ')' => Token::CloseParen,
+                    '{' => Token::OpenBlock,
+                    '}' => Token::CloseBlock,
+                    ',' => Token::Comma,
+                    ';' => Token::Semicolon,
+                    '+' => Token::Operator(Op::Add),
+                    '-' => Token::Operator(Op::Sub),
+                    '*' => Token::Operator(Op::Mul),
+                    '^' => Token::Operator(Op::Exp),
+                    _ if exact_match("==") => Token::Operator(Op::Test),
+                    '=' => Token::Assign,
+                    _ if exact_match("//") => {
+                        while chars[self.lookahead_cursor] != '\n' {
+                            self.lookahead_cursor += 1;
+                        }
+                        self.cursor = self.lookahead_cursor + 1;
+                        return self.next_token();
+                    }
+                    '/' => Token::Operator(Op::Div),
+                    _ if exact_match("for") => Token::Keyword(Keyword::For),
+                    _ if exact_match("...") => Token::RangeSeparator,
+                    _ if exact_match("and") => Token::Operator(Op::And),
+                    _ if exact_match("or") => Token::Operator(Op::Or),
+                    _ if exact_match("unless") => Token::Condition(Condition::Unless),
+                    _ if exact_match("when") => Token::Condition(Condition::When),
+                    _ if exact_match("wait") => Token::Keyword(Keyword::Wait),
+                    _ if exact_match("spawn") => Token::Keyword(Keyword::Spawn),
+                    _ if exact_match("bullet") => Token::Keyword(Keyword::Bullet),
+                    _ if exact_match("path") => Token::Keyword(Keyword::Path),
+                    _ if exact_match("pattern") => Token::Keyword(Keyword::Pattern),
+                    _ if exact_match("let") => Token::Keyword(Keyword::Let),
+                    _ if exact_match("seconds") => Token::Keyword(Keyword::Seconds),
+                    _ if exact_match("frames") => Token::Keyword(Keyword::Frames),
+
                     number if initial.is_digit(10) => {
                         let mut full_number: String = String::new();
                         full_number.push(number); // first digit
@@ -65,11 +140,22 @@ impl Lexer {
                             self.lookahead_cursor = self.lookahead_cursor + 1;
                         }
 
-                        if shift {
-                            self.cursor = self.lookahead_cursor - 1;
+                        if chars[self.lookahead_cursor] == '.' {
+                            // handle case x...y where x. .. y is wrong
+                            if chars[self.lookahead_cursor + 1] == '.' {
+                                self.cursor = self.lookahead_cursor - 1;
+                                return Some(Token::Number(full_number));
+                            }
+                            full_number.push(chars[self.lookahead_cursor]);
+                            self.lookahead_cursor = self.lookahead_cursor + 1;
+                            while chars[self.lookahead_cursor].is_digit(10) {
+                                full_number.push(chars[self.lookahead_cursor]);
+                                self.lookahead_cursor = self.lookahead_cursor + 1;
+                            }
                         }
 
-                        Token::Number(NotNaN::new(full_number.parse::<f64>().unwrap()).unwrap())
+                        self.cursor = self.lookahead_cursor - 1;
+                        Token::Number(full_number)
                     }
                     '"' => {
                         let mut full_string: String = String::new();
@@ -85,50 +171,27 @@ impl Lexer {
                             }
                             self.lookahead_cursor = self.lookahead_cursor + 1;
                         }
-
-                        if shift {
-                            self.cursor = self.lookahead_cursor;
-                        }
-
                         Token::String(full_string)
                     }
-                    _ if initial.is_ascii_alphabetic() => {
-                        let mut is_word = |word: &str| -> bool {
-                            let length: usize = word.len();
-                            let found: String =
-                                chars[self.cursor..self.cursor + length].iter().collect();
-                            if word == found {
-                                if shift {
-                                    self.cursor = self.cursor + length;
-                                }
-                            }
-                            word == found
-                        };
-                        if is_word("true") {
-                            return Some(Token::True);
+                    c if initial.is_ascii_alphabetic() => {
+                        let mut full_id: String = String::new();
+                        full_id.push(c); // first digit
+
+                        let c = chars[self.lookahead_cursor];
+                        while c.is_alphanumeric() || c == '_' || c == '-' {
+                            full_id.push(chars[self.lookahead_cursor]);
+                            self.lookahead_cursor = self.lookahead_cursor + 1;
                         }
-                        if is_word("false") {
-                            return Some(Token::False);
-                        }
-                        if is_word("null") {
-                            return Some(Token::Null);
-                        }
-                        return Some(Token::LexerError(initial));
+
+                        Token::Id(full_id)
                     }
                     _ if initial.is_ascii_whitespace() => {
                         self.cursor = self.cursor + 1;
-                        return self.next_token(shift);
+                        return self.next_token();
                     }
-                    c => {
-                        if shift {
-                            self.cursor = self.cursor + 1;
-                        }
-                        Token::LexerError(c)
-                    }
+                    c => Token::LexerError(c),
                 };
-                if shift {
-                    self.cursor = self.cursor + 1;
-                }
+
                 return Some(token);
             }
             None => None,
