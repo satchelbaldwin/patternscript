@@ -2,6 +2,7 @@ mod lexer;
 mod parser;
 
 use lexer::{Lexer, Token};
+use parser::{ParseTreeNode, ParseTreeValue, Parser};
 use std::env;
 use std::fs;
 use std::process;
@@ -16,6 +17,7 @@ fn main() {
         process::exit(1);
     }
     let contents = fs::read_to_string(&args[1]);
+
     let mut lexer = Lexer::new(contents.unwrap());
     let mut token = lexer.next_token();
     while token != Some(Token::EOF) {
@@ -23,4 +25,12 @@ fn main() {
         token = lexer.next_token();
     }
     println!("{:?}", token.unwrap());
+
+    println!("----------");
+
+    let contents = fs::read_to_string(&args[1]);
+    let lexer = Lexer::new(contents.unwrap());
+    let mut parser = Parser::new(lexer);
+    let mut head = parser.evaluate();
+    println!("{}", head.unwrap());
 }
