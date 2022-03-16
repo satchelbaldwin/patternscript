@@ -12,25 +12,30 @@ fn main() {
 
     println!("{:?}", args);
 
-    if args.len() != 2 {
-        println!("usage: ./??? file");
+    if args.len() < 2 {
+        println!("usage: ./patternscript [options] file");
         process::exit(1);
     }
-    let contents = fs::read_to_string(&args[1]);
 
-    let mut lexer = Lexer::new(contents.unwrap());
-    let mut token = lexer.next_token();
-    while token != Some(Token::EOF) {
+    if &args[1] == "-l" {
+        println!("Lexer:\n---------\n");
+
+        let contents = fs::read_to_string(&args[2]);
+        let mut lexer = Lexer::new(contents.unwrap());
+        let mut token = lexer.next_token();
+        while token != Some(Token::EOF) {
+            println!("{:?}", token.unwrap());
+            token = lexer.next_token();
+        }
         println!("{:?}", token.unwrap());
-        token = lexer.next_token();
     }
-    println!("{:?}", token.unwrap());
 
-    println!("----------");
-
-    let contents = fs::read_to_string(&args[1]);
-    let lexer = Lexer::new(contents.unwrap());
-    let mut parser = Parser::new(lexer);
-    let mut head = parser.evaluate();
-    println!("{}", head.unwrap());
+    if &args[1] == "-p" {
+        println!("Parser:\n---------\n");
+        let contents = fs::read_to_string(&args[2]);
+        let lexer = Lexer::new(contents.unwrap());
+        let mut parser = Parser::new(lexer);
+        let mut head = parser.evaluate();
+        println!("{}", head.unwrap());
+    }
 }

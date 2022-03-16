@@ -18,6 +18,8 @@ pub enum ParseTreeValue {
     Path,
     Assignment,
     Wait,
+    Seconds,
+    Frames,
     For,
     Expression,
     RValue,
@@ -114,7 +116,6 @@ impl Parser {
         let mut head = ParseTreeNode::new_head();
 
         while let Some(token) = self.lexer.next_token() {
-            println!("Token: {:?}", token);
             if token != Token::EOF {
                 let statement = self.parse_statements(token, &mut head)?;
                 head.children.push(statement);
@@ -131,8 +132,6 @@ impl Parser {
     }
 
     fn parse_statements(&mut self, t: Token, parent: &mut ParseTreeNode) -> ParseResult {
-        println!("Parsing toplevel...");
-
         if t == Token::Keyword(Keyword::Pattern) {
             return self.parse_pattern(parent);
         }
@@ -144,46 +143,42 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        println!("Parsing pattern...");
-
         let mut pattern_node =
             ParseTreeNode::new(ParseTreeValue::Pattern, HashMap::new(), Vec::new());
 
-        let t = self.lexer.next_token();
+        let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
 
-        println!("{:?}", t);
         match t {
-            Some(Token::Id(t)) => {
+            Token::Id(t) => {
                 parent.table.insert(t.clone(), ParseTreeValue::Pattern);
 
                 let id_node = ParseTreeNode::new_empty(ParseTreeValue::Id(t));
                 pattern_node.children.push(id_node);
 
-                let t = self.lexer.next_token();
-                println!("{:?}", t);
-                match t {
-                    Some(Token::Assign) => match self.parse_block(&mut pattern_node) {
-                        Ok(block) => {
-                            pattern_node.children.push(block);
-                            Ok(pattern_node)
-                        }
-                        Err(e) => Err(e),
-                    },
-                    _ => Err(SyntaxError::ExpectedToken(
-                        t.unwrap_or(Token::EOF),
-                        "Expected an `=` between pattern name and block.",
-                    )),
-                }
+                let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
+                let node = match t {
+                    Token::Assign => self.parse_block(&mut pattern_node)?,
+                    _ => {
+                        return Err(SyntaxError::ExpectedToken(
+                            t,
+                            "Expected an `=` between pattern name and block.",
+                        ))
+                    }
+                };
+                pattern_node.children.push(node);
             }
-            t => Err(SyntaxError::ExpectedToken(
-                t.unwrap_or(Token::EOF),
-                "Unexpected token for pattern ID.",
-            )),
+            t => {
+                return Err(SyntaxError::ExpectedToken(
+                    t,
+                    "Unexpected token for pattern ID.",
+                ))
+            }
         }
+
+        Ok(pattern_node)
     }
 
     fn parse_block(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        println!("Parsing block...");
         let t = self.lexer.next_token();
         if t != Some(Token::OpenBlock) {
             return Err(SyntaxError::ExpectedToken(
@@ -196,19 +191,12 @@ impl Parser {
 
         while let Some(t) = self.lexer.next_token() {
             let node = match t {
-                Token::Keyword(Keyword::Path) => self.parse_assignment(&mut block_node)?,
                 Token::Id(id) => self.parse_assignment(&mut block_node)?,
-                Token::Keyword(Keyword::Wait) => {
-                    block_node.children.push(self.parse_wait(&mut block_node)?);
-                }
-                Token::Keyword(Keyword::For) => {
-                    block_node.children.push(self.parse_for(&mut block_node)?);
-                }
-                Token::Keyword(Keyword::Spawn) => {
-                    self.push_child_if_successful(
-                        self.parse_spawn(&mut block_node),
-                        &mut block_node,
-                    );
+                Token::Keyword(Keyword::Wait) => self.parse_wait(&mut block_node)?,
+                Token::Keyword(Keyword::For) => self.parse_for(&mut block_node)?,
+                Token::Keyword(Keyword::Spawn) => self.parse_spawn(&mut block_node)?,
+                Token::CloseBlock => {
+                    break;
                 }
                 _ => {
                     return Err(SyntaxError::ExpectedToken(
@@ -216,17 +204,25 @@ impl Parser {
                         "expected one of: wait, for, spawn, variable",
                     ));
                 }
-                Token::CloseBlock => {
-                    break;
-                }
-            }
+            };
+            block_node.children.push(node);
         }
 
         Ok(block_node)
     }
 
     fn parse_wait(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        self.unimplemented_result()
+        let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
+        // float -> time(seconds),
+        // int   -> time(frames), time(seconds)
+        let number_node = match t {
+            Token::Number(num_string) => {
+                
+            }
+            _ => {
+                return Err(SyntaxError::ExpectedToken(t, "expected number after wait"))
+            }
+        }
     }
 
     fn parse_for(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
