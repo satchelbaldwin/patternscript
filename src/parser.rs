@@ -7,6 +7,8 @@ use std::fmt;
 pub enum SyntaxError {
     ExpectedToken(Token, &'static str), // got `x`, expected `y` -- token is x, str shows y
     UnexpectedEOF,
+    InvalidFloat,
+    InvalidInt,
 }
 
 #[derive(Debug)]
@@ -211,16 +213,50 @@ impl Parser {
         Ok(block_node)
     }
 
-    fn parse_wait(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
+    fn parse_num(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
         let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
-        // float -> time(seconds),
-        // int   -> time(frames), time(seconds)
-        let number_node = match t {
-            Token::Number(num_string) => {
-                
+        match t {
+            Token::Number(s) => {
+                if s.contains(".") {
+                    let f: f64 = match s.parse::<f64>() {
+                        Ok(f) => f,
+                        Err(_) => {
+                            return Err(SyntaxError::InvalidFloat);
+                        }
+                    };
+                    let n =
+                        ParseTreeNode::new_empty(ParseTreeValue::Float(NotNan::new(f).unwrap()));
+                    return Ok(n);
+                } else {
+                    let i: i64 = match s.parse() {
+                        Ok(i) => i,
+                        Err(_) => {
+                            return Err(SyntaxError::InvalidInt);
+                        }
+                    };
+                    let n = ParseTreeNode::new_empty(ParseTreeValue::Int(i));
+                    return Ok(n);
+                }
             }
             _ => {
-                return Err(SyntaxError::ExpectedToken(t, "expected number after wait"))
+                return Err(SyntaxError::ExpectedToken(t, "expected number."));
+            }
+        }
+    }
+
+    fn parse_wait(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
+        // float -> time(seconds),
+        // int   -> time(frames), time(seconds)
+        let wait_node = ParseTreeNode::new_empty(ParseTreeValue::Wait);
+        let number_node = self.parse_num(wait_node)?;
+        match number_node.value {
+            ParseTreeValue::Int(i) => {}
+            ParseTreeValue::Float(n) => {}
+            _ => {
+                return Err(SyntaxError::ExpectedToken(
+                    Token::Number("".to_string()),
+                    "Expected number.",
+                ))
             }
         }
     }
