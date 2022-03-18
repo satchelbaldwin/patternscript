@@ -2,7 +2,7 @@ mod lexer;
 mod parser;
 
 use lexer::{Lexer, Token};
-use parser::{ParseTreeNode, ParseTreeValue, Parser};
+use parser::Parser;
 use std::env;
 use std::fs;
 use std::process;
@@ -36,6 +36,9 @@ fn main() {
         let lexer = Lexer::new(contents.unwrap());
         let mut parser = Parser::new(lexer);
         let mut head = parser.evaluate();
-        println!("{}", head.unwrap());
+        match head {
+            Ok(h) => println!("{:?}", h),
+            Err(e) => println!("{}", e),
+        }
     }
 }

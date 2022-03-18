@@ -1,105 +1,112 @@
 use crate::lexer::{Keyword, Lexer, Token};
+use anyhow::{Context, Result};
 use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub enum SyntaxError {
-    ExpectedToken(Token, &'static str), // got `x`, expected `y` -- token is x, str shows y
-    UnexpectedEOF,
-    InvalidFloat,
-    InvalidInt,
+#[derive(Debug, Error)]
+pub enum ParseError {
+    #[error("Unexpected token {0:?}")]
+    Token(Token),
+    #[error("Expected token {0:?} but got token {1:?}")]
+    Expected(Token, Token),
+    #[error("Unexpected EOF.")]
+    EOF,
+    #[error("Unknown parser error occured.")]
+    Unknown,
 }
 
 #[derive(Debug)]
-pub enum ParseTreeValue {
-    Head,
-    Statement,
-    Pattern,
-    Bullet,
-    Path,
-    Assignment,
-    Wait,
-    Seconds,
-    Frames,
-    For,
-    Expression,
-    RValue,
-    Id(String),
-    Num,
+pub struct HeadData {
+    definitions: HashMap<String, Node>,
+}
+
+type Values = HashMap<String, ExpressionType>;
+
+pub enum ExpressionType {
     Int(i64),
-    Float(NotNan<f64>),
-    FunctionCall,
-    Range,
-    ForCondition,
-    Test,
-    Bool,
-    Expr,
-    Term,
-    Factor,
-    ArithmeticExpression,
-    Block,
-    Args,
-    ArgumentDefinition,
-    ForDeclaration,
-    ForBlock,
+    Float(f64),
+    String(String),
+    Bool(bool),
+    // Vector Types
+    Runtime(fn(&Values) -> ExpressionType),
+}
+
+impl fmt::Debug for ExpressionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "primitive")
+    }
 }
 
 #[derive(Debug)]
-pub struct ParseTreeNode {
-    value: ParseTreeValue,
-    table: HashMap<String, ParseTreeValue>,
-    children: Vec<ParseTreeNode>,
+pub struct Block {
+    definitions: Values,
+    statements: Vec<Node>,
 }
 
-impl fmt::Display for ParseTreeNode {
+#[derive(Debug)]
+pub struct PatternData {
+    block: Block,
+}
+
+#[derive(Debug)]
+pub struct BulletData {
+    definitions: Values,
+}
+
+#[derive(Debug)]
+pub struct PathData {}
+
+#[derive(Debug)]
+pub struct AssignmentData {
+    lvalue: String,
+    rvalue: ExpressionType,
+}
+
+#[derive(Debug)]
+pub enum WaitData {
+    Frames(i64),
+    Time(f64),
+}
+
+#[derive(Debug)]
+pub enum Conditional {
+    When(ExpressionType),
+    Unless(ExpressionType),
+}
+
+#[derive(Debug)]
+pub struct ForData {
+    initial_definitions: Values,
+    condition: Conditional,
+    body: Block,
+}
+
+#[derive(Debug)]
+pub struct SpawnData {
+    definitions: Values,
+}
+
+#[derive(Debug)]
+pub enum Node {
+    Head(HeadData),
+    Pattern(PatternData),
+    Bullet(BulletData),
+    Path(PathData),
+    Assignment(AssignmentData),
+    Wait(WaitData),
+    For(ForData),
+    Expression(ExpressionType),
+    Spawn(SpawnData),
+}
+
+impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn single_node_fmt(f: &mut fmt::Formatter, ident: usize, node: &ParseTreeNode) {
-            let spaces = |num: usize| String::from(" ".repeat(num));
-            let _ = write!(
-                f,
-                "{}value: {:?}{}table: {:?}\n",
-                spaces(ident * 4),
-                node.value,
-                spaces(30),
-                node.table
-            );
-            for child in &node.children {
-                single_node_fmt(f, ident + 1, &child);
-            }
+        fn fmt_single(n: &Node, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "test")
         }
-        single_node_fmt(f, 0, &self);
-        write!(f, "")
-    }
-}
-
-impl ParseTreeNode {
-    pub fn new_head() -> ParseTreeNode {
-        ParseTreeNode {
-            value: ParseTreeValue::Head,
-            table: HashMap::new(),
-            children: Vec::new(),
-        }
-    }
-
-    pub fn new_empty(value: ParseTreeValue) -> ParseTreeNode {
-        ParseTreeNode {
-            value,
-            table: HashMap::new(),
-            children: Vec::new(),
-        }
-    }
-
-    pub fn new(
-        value: ParseTreeValue,
-        table: HashMap<String, ParseTreeValue>,
-        children: Vec<ParseTreeNode>,
-    ) -> ParseTreeNode {
-        ParseTreeNode {
-            value,
-            table,
-            children,
-        }
+        fmt_single(&self, f)
     }
 }
 
@@ -107,167 +114,70 @@ pub struct Parser {
     lexer: Lexer,
 }
 
-pub type ParseResult = Result<ParseTreeNode, SyntaxError>;
+type NamedToplevel = (String, Node);
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Parser {
         Parser { lexer }
     }
 
-    pub fn evaluate(&mut self) -> ParseResult {
-        let mut head = ParseTreeNode::new_head();
+    pub fn next_token(&mut self) -> Result<Token> {
+        self.lexer.next_token().ok_or(ParseError::EOF.into())
+    }
 
+    pub fn expect_next(&mut self, expected: Token) -> Result<Token> {
+        let t = self.next_token()?;
+        if t != expected {
+            return Err(ParseError::Expected(expected, t).into());
+        }
+        Ok(t)
+    }
+
+    pub fn evaluate(&mut self) -> Result<Node> {
+        self.parse_head()
+    }
+
+    pub fn parse_head(&mut self) -> Result<Node> {
+        let mut head = Node::Head(HeadData {
+            definitions: HashMap::new(),
+        });
         while let Some(token) = self.lexer.next_token() {
-            if token != Token::EOF {
-                let statement = self.parse_statements(token, &mut head)?;
-                head.children.push(statement);
-            } else {
-                break;
+            let (name, node) = match token {
+                Token::EOF => {
+                    break;
+                }
+                Token::Keyword(Keyword::Pattern) => self.parse_pattern()?,
+                _ => {
+                    return Err(ParseError::Token(token).into());
+                }
+            };
+            if let Node::Head(ref mut head) = head {
+                head.definitions.insert(name, node);
             }
         }
-
         Ok(head)
     }
 
-    fn unimplemented_result(&self) -> ParseResult {
-        Ok(ParseTreeNode::new_head())
-    }
-
-    fn parse_statements(&mut self, t: Token, parent: &mut ParseTreeNode) -> ParseResult {
-        if t == Token::Keyword(Keyword::Pattern) {
-            return self.parse_pattern(parent);
-        }
-
-        Err(SyntaxError::ExpectedToken(
-            t,
-            "Unexpected token for toplevel definition.",
-        ))
-    }
-
-    fn parse_pattern(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        let mut pattern_node =
-            ParseTreeNode::new(ParseTreeValue::Pattern, HashMap::new(), Vec::new());
-
-        let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
-
-        match t {
-            Token::Id(t) => {
-                parent.table.insert(t.clone(), ParseTreeValue::Pattern);
-
-                let id_node = ParseTreeNode::new_empty(ParseTreeValue::Id(t));
-                pattern_node.children.push(id_node);
-
-                let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
-                let node = match t {
-                    Token::Assign => self.parse_block(&mut pattern_node)?,
-                    _ => {
-                        return Err(SyntaxError::ExpectedToken(
-                            t,
-                            "Expected an `=` between pattern name and block.",
-                        ))
-                    }
-                };
-                pattern_node.children.push(node);
-            }
-            t => {
-                return Err(SyntaxError::ExpectedToken(
-                    t,
-                    "Unexpected token for pattern ID.",
-                ))
-            }
-        }
-
-        Ok(pattern_node)
-    }
-
-    fn parse_block(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        let t = self.lexer.next_token();
-        if t != Some(Token::OpenBlock) {
-            return Err(SyntaxError::ExpectedToken(
-                Token::OpenBlock,
-                "Expected block",
-            ));
-        }
-
-        let mut block_node = ParseTreeNode::new_empty(ParseTreeValue::Block);
-
-        while let Some(t) = self.lexer.next_token() {
-            let node = match t {
-                Token::Id(id) => self.parse_assignment(&mut block_node)?,
-                Token::Keyword(Keyword::Wait) => self.parse_wait(&mut block_node)?,
-                Token::Keyword(Keyword::For) => self.parse_for(&mut block_node)?,
-                Token::Keyword(Keyword::Spawn) => self.parse_spawn(&mut block_node)?,
-                Token::CloseBlock => {
-                    break;
-                }
-                _ => {
-                    return Err(SyntaxError::ExpectedToken(
-                        t,
-                        "expected one of: wait, for, spawn, variable",
-                    ));
-                }
-            };
-            block_node.children.push(node);
-        }
-
-        Ok(block_node)
-    }
-
-    fn parse_num(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        let t = self.lexer.next_token().ok_or(SyntaxError::UnexpectedEOF)?;
-        match t {
-            Token::Number(s) => {
-                if s.contains(".") {
-                    let f: f64 = match s.parse::<f64>() {
-                        Ok(f) => f,
-                        Err(_) => {
-                            return Err(SyntaxError::InvalidFloat);
-                        }
-                    };
-                    let n =
-                        ParseTreeNode::new_empty(ParseTreeValue::Float(NotNan::new(f).unwrap()));
-                    return Ok(n);
-                } else {
-                    let i: i64 = match s.parse() {
-                        Ok(i) => i,
-                        Err(_) => {
-                            return Err(SyntaxError::InvalidInt);
-                        }
-                    };
-                    let n = ParseTreeNode::new_empty(ParseTreeValue::Int(i));
-                    return Ok(n);
-                }
-            }
-            _ => {
-                return Err(SyntaxError::ExpectedToken(t, "expected number."));
-            }
+    pub fn parse_pattern(&mut self) -> Result<NamedToplevel> {
+        let name = self.next_token().context("Parsing pattern.")?;
+        if let Token::Id(name) = name {
+            self.expect_next(Token::Assign)?;
+            let block = self.parse_block()?;
+            let pattern_node = Node::Pattern(PatternData { block });
+            return Ok((name, pattern_node));
+        } else {
+            return Err(ParseError::Expected(Token::String("Id".to_string()), name).into());
         }
     }
 
-    fn parse_wait(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        // float -> time(seconds),
-        // int   -> time(frames), time(seconds)
-        let wait_node = ParseTreeNode::new_empty(ParseTreeValue::Wait);
-        let number_node = self.parse_num(wait_node)?;
-        match number_node.value {
-            ParseTreeValue::Int(i) => {}
-            ParseTreeValue::Float(n) => {}
-            _ => {
-                return Err(SyntaxError::ExpectedToken(
-                    Token::Number("".to_string()),
-                    "Expected number.",
-                ))
-            }
-        }
-    }
-
-    fn parse_for(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        self.unimplemented_result()
-    }
-    fn parse_assignment(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        self.unimplemented_result()
-    }
-    fn parse_spawn(&mut self, parent: &mut ParseTreeNode) -> ParseResult {
-        self.unimplemented_result()
+    pub fn parse_block(&mut self) -> Result<Block> {
+        self.expect_next(Token::OpenBlock)
+            .context("Parsing block.")?;
+        let mut block = Block {
+            definitions: HashMap::new(),
+            statements: Vec::new(),
+        };
+        self.expect_next(Token::CloseBlock)?;
+        Ok(block)
     }
 }
