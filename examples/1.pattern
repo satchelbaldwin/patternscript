@@ -4,22 +4,30 @@ bullet mid_sized = {
      color = (255, 255, 0);
 }
 
-path downward_s_curve(t, speed, offset) = {
-     x = (50 * sin(t)) + offset;
-     y = t * speed;
+//path downward_s_curve(t, speed, offset) = {
+//     x = (50 * sin(t)) + offset;
+//     y = t * speed;
+//}
+
+pattern p2 = {
+     actions =  {
+          spawn {
+
+	  }
+     }
 }
 
 pattern phase1 = {
      iteration_type = time;  // time instead of a cycle count
      length = 6.0 seconds;           // time in seconds
      actions = {
-          let origin = entity_position + (0, 20);
+          oarigin = entity_position + (0, 20);
 
           for (n = 0...5) {
-               let angle = towards_player;
+               angle = towards_player;
                spawn {
                     type = mid_sized,
-                    position = origin,
+                    position = oarigin,
                     direction = angle + n * 20,        // should handle precedence correctly here
                     speed = 200,
                }
@@ -37,5 +45,3 @@ pattern phase1 = {
      }
 }
 
-pattern;
-pattern ;

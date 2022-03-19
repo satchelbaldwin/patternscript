@@ -1,0 +1,13 @@
+pattern p2 = {
+  a = 1;
+  actions = {
+    for (i = 0...1) {
+      spawn {
+
+      }
+    }
+    spawn {
+
+    }
+  }
+}
