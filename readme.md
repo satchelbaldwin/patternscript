@@ -62,6 +62,7 @@ stmt := pattern id '=' block
       | id '=' args; // tuple
       | wait time;
       | for_block
+      | spawn block
 ```
 
 
@@ -83,10 +84,10 @@ pattern phase1 = {
      iteration_type = time;  // time instead of a cycle count
      length = 6.0 seconds;           // time in seconds
      actions = {
-          let origin = entity_position + (0, 20);
+          origin = entity_position + (0, 20);
 
           for (n = 0...5) {
-               let angle = towards_player;
+               angle = towards_player;
                spawn {
                     bullet = mid_sized,
                     position = origin,
