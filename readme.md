@@ -1,5 +1,26 @@
 # ps
 
+## building
+
+requirements: a working rust/cargo installation
+
+`cargo build`
+
+## usage
+
+```
+./patternscript [action] [file]
+    actions:
+        -p : parse
+        -l : lex
+    file: 
+        a patternscript file, see examples
+```
+
+example:
+
+`cargo run -- -p example/1.pattern`
+
 ## prior work
 
 the venerable (bulletml)[https://www.asahi-net.or.jp/~cs8k-cyu/bulletml/index_e.html]
