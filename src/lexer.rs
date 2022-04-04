@@ -97,16 +97,26 @@ impl Lexer {
                         return false;
                     }
 
+                    // things which can happen directly after a keyword and not be a part of it
+                    let terminators = vec![';', ' ', '(', '{', '='];
+                    // tokens which break the above rules
+                    let special_tokens: Vec<&str> = vec!["//", "==", "..."];
+                    // found is what we find in the character range of the expected word
                     let found: String = chars[self.cursor..self.cursor + length].iter().collect();
-
-                    if word == found
-                        && (chars[self.cursor + length] == ';'
-                            || chars[self.cursor + length] == ' '
-                            || chars[self.cursor + length] == '('
-                            || chars[self.cursor + length] == '{'
-                            || word == "=="
-                            || word == "...")
-                    {
+                    if word == found {
+                        // ignore keywords that can have alphanumeric
+                        if !special_tokens.contains(&word) {
+                            // if it's the last token, nothing can come after that invalidates it
+                            if self.cursor + length == chars.len() {
+                                return true;
+                            }
+                            let lookahead = chars[self.cursor + length];
+                            if !terminators.contains(&lookahead) {
+                                // keyword has alphanumeric letters after -- this is not a keyword!
+                                // see: origin where origin[0..2]='or'
+                                return false;
+                            }
+                        }
                         self.cursor = self.cursor + length - 1;
                     }
 

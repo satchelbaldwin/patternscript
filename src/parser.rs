@@ -20,6 +20,8 @@ pub enum ParseError {
     InvalidForDef,
     #[error("Range must be two Ints, not Floats.")]
     RangeMustBeInt,
+    #[error("Bad vector element.")]
+    BadVecElement,
     #[error("Unknown parser error occured.")]
     Unknown,
 }
@@ -31,6 +33,30 @@ pub struct HeadData {
 
 type Values = HashMap<String, ExpressionType>;
 
+pub enum BinaryOperator {
+    Add,
+    Mul,
+    Div,
+    Sub,
+    Pow,
+}
+
+pub enum ArithmeticExpression {
+    Unary(UnaryOperator, Box<ArithmeticExpression>),
+    Binary(
+        BinaryOperator,
+        Box<ArithmeticExpression>,
+        Box<ArithmeticExpression>,
+    ),
+    Float(f64),
+    Int(i64),
+}
+
+pub enum UnaryOperator {
+    Negate,
+    Sqrt,
+}
+
 pub enum ExpressionType {
     Int(i64),
     Float(f64),
@@ -38,9 +64,15 @@ pub enum ExpressionType {
     Bool(bool),
     Range(i64, i64),
     Block(Block),
-    // Vector Types
-    Runtime(fn(&Values) -> ExpressionType),
+    Vector(Vec<ExpressionType>),
+    Runtime(ArithmeticExpression),
     Unimplemented,
+}
+
+impl ExpressionType {
+    fn reduce(&self, v: &Values) -> ExpressionType {
+        unimplemented!()
+    }
 }
 
 impl fmt::Debug for ExpressionType {
@@ -263,31 +295,87 @@ impl Parser {
 
     // note: currently, this should consume ending `;` or `,`
     //       should it? is this a good idea?
+    //
+    // note: excellent article https://www.engr.mun.ca/~theo/Misc/exp_parsing.htm with details about
+    //       three approaches to this problem, cited papers are also extremely helpful in the
+    //       bibliography of the linked post.
     pub fn parse_expression(&mut self) -> Result<ExpressionType> {
+        let expr = self.parse_expression_r();
+        expr
+    }
+    // inner recursive loop in the case of vectors
+    pub fn parse_expression_r(&mut self) -> Result<ExpressionType> {
         let mut t = self.lookahead(1)?;
-        if t == Token::OpenBlock {
-            return Ok(ExpressionType::Block(self.parse_block()?));
-        }
-
-        t = self.next_token()?;
-
-        // cheat and count parens to avoid commas...
-        let mut unmatchedp: usize = 0;
-
-        while (t != Token::Semicolon && t != Token::Comma && t != Token::CloseParen)
-            || (unmatchedp > 0)
-        {
-            if t == Token::OpenParen {
-                unmatchedp += 1;
+        match t {
+            Token::OpenBlock => {
+                self.next_token()?;
+                return Ok(ExpressionType::Block(self.parse_block()?));
             }
-
-            if t == Token::CloseParen {
-                unmatchedp -= 1;
+            Token::String(s) => {
+                self.next_token()?;
+                return Ok(ExpressionType::String(s));
             }
+            // in the outermost parenthesis loop, are we a vector?
+            // (1, 2)       -- yes
+            // ((x + 1), 2) -- yes
+            // ((x + 1)- 2) -- no
+            Token::OpenParen => {
+                let mut found_vector = false;
+                let mut nested_paren_level = 0;
+                let mut lookahead_n = 2; // t (open paren), we start at next
+                while !(t == Token::CloseParen && nested_paren_level == 0) {
+                    t = self.lookahead(lookahead_n)?;
+                    if t == Token::OpenParen {
+                        nested_paren_level += 1;
+                    }
+                    if t == Token::CloseParen {
+                        nested_paren_level -= 1;
+                    }
+                    if t == Token::Comma && nested_paren_level == 0 {
+                        found_vector = true;
+                    }
+                    lookahead_n += 1;
+                }
 
-            t = self.next_token()?;
+                // we are dealing with a vector
+                if found_vector {
+                    let mut v: Vec<ExpressionType> = Vec::new();
+                    // consume open paren
+                    self.expect_next(Token::OpenParen)?;
+                    loop {
+                        v.push(self.parse_expression_r()?);
+                        match self.next_token()? {
+                            Token::Comma => {
+                                continue;
+                            }
+                            Token::CloseParen => {
+                                return Ok(ExpressionType::Vector(v));
+                            }
+                            _ => return Err(ParseError::BadVecElement.into()),
+                        }
+                    }
+                } else {
+                    return self.parse_expression_p(0);
+                }
+                // not a vector: case handled by precedence
+            }
+            _ => {
+                return self.parse_expression_p(0);
+            }
         }
-        Ok(ExpressionType::Unimplemented)
+    }
+    // precedence handling -- the meat
+    pub fn parse_expression_p(&mut self, precedence: u32) -> Result<ExpressionType> {
+        // now for everything else...
+        // precedence:
+        //   0?: PAREN/VECTOR
+        //   1L: OR
+        //   2L: AND
+        //   3L: +-
+        //   4L: - (UNARY)
+        //   5L: */
+        //   6R: ^
+        unimplemented!();
     }
 
     pub fn parse_for(&mut self) -> Result<ForData> {
