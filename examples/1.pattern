@@ -13,7 +13,7 @@ pattern p2 = {
      actions =  {
           spawn {
 
-	  }
+	     }
      }
 }
 
@@ -21,13 +21,13 @@ pattern phase1 = {
      iteration_type = time;  // time instead of a cycle count
      length = 6.0 seconds;           // time in seconds
      actions = {
-          oarigin = entity_position + (0, 20);
+          origin = entity_position + (0, 20);
 
           for (n = 0...5) {
                angle = towards_player;
                spawn {
                     type = mid_sized,
-                    position = oarigin,
+                    position = origin,
                     direction = angle + n * 20,        // should handle precedence correctly here
                     speed = 200,
                }

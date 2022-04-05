@@ -2,7 +2,7 @@ use crate::lexer::{ConditionToken, Keyword, Lexer, Token};
 use crate::types::Op;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::fmt;
+//use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -25,8 +25,6 @@ pub enum ParseError {
     BadVecElement,
     #[error("{0}")]
     NeedsClearerError(&'static str),
-    #[error("Unknown parser error occured.")]
-    Unknown,
 }
 
 #[derive(Debug)]
@@ -36,42 +34,29 @@ pub struct HeadData {
 
 type Values = HashMap<String, ExpressionType>;
 
+#[derive(Debug)]
 pub enum ArithmeticExpression {
     Unary(UnaryOperator, Box<ExpressionType>),
     Binary(Op, Box<ExpressionType>, Box<ExpressionType>),
-    Float(f64),
-    Int(i64),
 }
 
+#[derive(Debug)]
 pub enum UnaryOperator {
     Negate,
-    Sqrt,
     FunctionCall(String), // Unary(FunctionCall(name of function), (boxed args vec: see above enum))
 }
 
+#[derive(Debug)]
 pub enum ExpressionType {
     Int(i64),
     Float(f64),
     String(String),
-    Bool(bool),
     Range(i64, i64),
     Block(Block),
     Variable(String),
+    Time(Box<WaitData>),
     Vector(Vec<ExpressionType>),
     Expr(ArithmeticExpression),
-    Unimplemented,
-}
-
-impl ExpressionType {
-    fn reduce(&self, v: &Values) -> ExpressionType {
-        unimplemented!()
-    }
-}
-
-impl fmt::Debug for ExpressionType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "primitive")
-    }
 }
 
 #[derive(Debug)]
@@ -112,8 +97,8 @@ pub struct AssignmentData {
 
 #[derive(Debug)]
 pub enum WaitData {
-    Frames(i64),
-    Time(f64),
+    Frames(ExpressionType),
+    Time(ExpressionType),
 }
 
 #[derive(Debug)]
@@ -143,18 +128,18 @@ pub enum Node {
     Path(PathData),
     Wait(WaitData),
     For(ForData),
-    Expression(ExpressionType),
+    // Expression(ExpressionType),
     Spawn(SpawnData),
 }
 
-impl fmt::Display for Node {
+/*impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_single(n: &Node, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "test")
         }
         fmt_single(&self, f)
     }
-}
+}*/
 
 type NamedToplevel = (String, Node);
 
@@ -293,15 +278,41 @@ impl Parser {
     //       three approaches to this problem, cited papers are also extremely helpful in the
     //       bibliography of the linked post.
     pub fn parse_expression(&mut self) -> Result<ExpressionType> {
+        println!("beginning expression: lookahead {:?}", self.lookahead(1));
         let expr = self.parse_expression_r();
-        expr
+        println!("expression: {:?}", expr);
+        println!("lookahead: {:?}", self.lookahead(1));
+        println!("lookahead 2: {:?}", self.lookahead(2));
+
+        // special case for postfix time pseudo-datatype
+        match self.lookahead(1)? {
+            Token::Keyword(Keyword::Seconds) => {
+                self.next_token()?;
+                self.expect_next(Token::Semicolon)?;
+                Ok(ExpressionType::Time(Box::new(WaitData::Time(expr?))))
+            }
+            Token::Keyword(Keyword::Frames) => {
+                self.next_token()?;
+                self.expect_next(Token::Semicolon)?;
+                Ok(ExpressionType::Time(Box::new(WaitData::Frames(expr?))))
+            }
+            Token::Semicolon => {
+                self.next_token()?;
+                expr
+            }
+            Token::CloseBlock => {
+                // leave token to be consumed by parse_block
+                expr
+            }
+            _ => Err(ParseError::NeedsClearerError("Expressions should end in } or ;.").into()),
+        }
     }
     // inner recursive loop in the case of vectors
     pub fn parse_expression_r(&mut self) -> Result<ExpressionType> {
         let mut t = self.lookahead(1)?;
         match t {
             Token::OpenBlock => {
-                self.next_token()?;
+                // self.next_token()?;
                 return Ok(ExpressionType::Block(self.parse_block()?));
             }
             Token::String(s) => {
@@ -386,7 +397,7 @@ impl Parser {
                 _ => break,
             }
         }
-        unimplemented!();
+        Ok(tree)
     }
 
     pub fn operator_precedence(&self, op: &Op) -> u32 {
@@ -411,7 +422,9 @@ impl Parser {
 
     pub fn parse_operator_or_value(&mut self) -> Result<ExpressionType> {
         // lookahead then consume on branch
+
         let t = self.lookahead(1)?;
+        println!("op or value: lookahead(1) {:?}", t);
         if matches!(t, Token::Operator(Op::Sub)) {
             // unary - precedence 4 left assoc
             self.next_token()?;
@@ -432,11 +445,7 @@ impl Parser {
             // not sure
             match t {
                 // value
-                Token::Number(_n) => {
-                    self.next_token()?;
-                    // lookahead not consume means parse_number doesn't need _n
-                    self.parse_number()
-                }
+                Token::Number(_n) => self.parse_number(),
                 // might be value? could also be fn call here
                 Token::Id(id) => {
                     //lookahead next run parse r as function call -- we have not consumed, so look 2
@@ -451,6 +460,7 @@ impl Parser {
                             Box::new(expr),
                         )))
                     } else {
+                        self.next_token()?;
                         Ok(ExpressionType::Variable(id))
                     }
                 }
@@ -536,10 +546,14 @@ impl Parser {
     }
 
     pub fn parse_wait(&mut self) -> Result<WaitData> {
-        self.next_token()?;
-        self.next_token()?;
-        self.next_token()?;
-        Ok(WaitData::Frames(10))
+        let e = self.parse_expression()?;
+        let r = match self.next_token()? {
+            Token::Keyword(Keyword::Frames) => Ok(WaitData::Frames(e)),
+            Token::Keyword(Keyword::Seconds) => Ok(WaitData::Time(e)),
+            w => Err(ParseError::Token(w).into()),
+        };
+        self.expect_next(Token::Semicolon)?;
+        r
     }
 
     pub fn parse_spawn(&mut self) -> Result<SpawnData> {

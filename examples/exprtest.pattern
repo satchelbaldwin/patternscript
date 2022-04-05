@@ -1,0 +1,7 @@
+pattern x = {
+    iteration_type = time;
+    length = 1.0 seconds;
+    actions = {
+        origin = 2 + 1;
+    }
+}
