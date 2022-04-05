@@ -1,5 +1,6 @@
 mod lexer;
 mod parser;
+mod types;
 
 use lexer::{Lexer, Token};
 use parser::Parser;

@@ -1,4 +1,5 @@
-use crate::lexer::{Condition as ConditionToken, Keyword, Lexer, Token};
+use crate::lexer::{ConditionToken, Keyword, Lexer, Token};
+use crate::types::Op;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fmt;
@@ -22,6 +23,8 @@ pub enum ParseError {
     RangeMustBeInt,
     #[error("Bad vector element.")]
     BadVecElement,
+    #[error("{0}")]
+    NeedsClearerError(&'static str),
     #[error("Unknown parser error occured.")]
     Unknown,
 }
@@ -33,21 +36,9 @@ pub struct HeadData {
 
 type Values = HashMap<String, ExpressionType>;
 
-pub enum BinaryOperator {
-    Add,
-    Mul,
-    Div,
-    Sub,
-    Pow,
-}
-
 pub enum ArithmeticExpression {
-    Unary(UnaryOperator, Box<ArithmeticExpression>),
-    Binary(
-        BinaryOperator,
-        Box<ArithmeticExpression>,
-        Box<ArithmeticExpression>,
-    ),
+    Unary(UnaryOperator, Box<ExpressionType>),
+    Binary(Op, Box<ExpressionType>, Box<ExpressionType>),
     Float(f64),
     Int(i64),
 }
@@ -55,6 +46,7 @@ pub enum ArithmeticExpression {
 pub enum UnaryOperator {
     Negate,
     Sqrt,
+    FunctionCall(String), // Unary(FunctionCall(name of function), (boxed args vec: see above enum))
 }
 
 pub enum ExpressionType {
@@ -64,8 +56,9 @@ pub enum ExpressionType {
     Bool(bool),
     Range(i64, i64),
     Block(Block),
+    Variable(String),
     Vector(Vec<ExpressionType>),
-    Runtime(ArithmeticExpression),
+    Expr(ArithmeticExpression),
     Unimplemented,
 }
 
@@ -163,11 +156,11 @@ impl fmt::Display for Node {
     }
 }
 
+type NamedToplevel = (String, Node);
+
 pub struct Parser {
     lexer: Lexer,
 }
-
-type NamedToplevel = (String, Node);
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Parser {
@@ -366,7 +359,37 @@ impl Parser {
     }
     // precedence handling -- the meat
     pub fn parse_expression_p(&mut self, precedence: u32) -> Result<ExpressionType> {
-        // now for everything else...
+        // initially set tree to first value -- we'll move ownership at each step
+        let mut tree = self.parse_operator_or_value()?;
+        loop {
+            let next = self.lookahead(1)?;
+            match next {
+                Token::Operator(op) => {
+                    let p = self.operator_precedence(&op);
+                    if p < precedence {
+                        break;
+                    }
+                    // invariant: next is a binary operator with precedence higher than fn call
+                    self.next_token()?;
+                    // left assoc: p + 1, right assoc: p
+                    let new_precedence = match op {
+                        Op::Exp => p + 1,
+                        _ => p,
+                    };
+                    let rhs = self.parse_expression_p(new_precedence)?;
+                    tree = ExpressionType::Expr(ArithmeticExpression::Binary(
+                        op,
+                        Box::new(tree),
+                        Box::new(rhs),
+                    ));
+                }
+                _ => break,
+            }
+        }
+        unimplemented!();
+    }
+
+    pub fn operator_precedence(&self, op: &Op) -> u32 {
         // precedence:
         //   0?: PAREN/VECTOR
         //   1L: OR
@@ -375,7 +398,68 @@ impl Parser {
         //   4L: - (UNARY)
         //   5L: */
         //   6R: ^
-        unimplemented!();
+        match op {
+            Op::Test => 0,
+            Op::Or => 1,
+            Op::And => 2,
+            // unary minus: => 4, somewhere else
+            Op::Add | Op::Sub => 3,
+            Op::Div | Op::Mul => 5,
+            Op::Exp => 6,
+        }
+    }
+
+    pub fn parse_operator_or_value(&mut self) -> Result<ExpressionType> {
+        // lookahead then consume on branch
+        let t = self.lookahead(1)?;
+        if matches!(t, Token::Operator(Op::Sub)) {
+            // unary - precedence 4 left assoc
+            self.next_token()?;
+            let expr = self.parse_expression_p(4)?;
+            Ok(ExpressionType::Expr(ArithmeticExpression::Unary(
+                UnaryOperator::Negate,
+                Box::new(expr),
+            )))
+        } else if t == Token::OpenParen {
+            // parenthized expression
+            self.next_token()?;
+            let expr: Result<ExpressionType> = self.parse_expression_p(0);
+            self.expect_next(Token::CloseParen)?;
+            expr
+        } else {
+            // could be value or fn call; hard to discern what a floating id means
+            // right now string is handled above for performance? that might change
+            // not sure
+            match t {
+                // value
+                Token::Number(_n) => {
+                    self.next_token()?;
+                    // lookahead not consume means parse_number doesn't need _n
+                    self.parse_number()
+                }
+                // might be value? could also be fn call here
+                Token::Id(id) => {
+                    //lookahead next run parse r as function call -- we have not consumed, so look 2
+                    let next_t = self.lookahead(2)?;
+                    if next_t == Token::OpenParen {
+                        // consume singular so we know we have ( on deck
+                        self.next_token()?;
+                        let expr = self.parse_expression_r()?;
+                        // hopefully a vector? should be or we crash probs
+                        Ok(ExpressionType::Expr(ArithmeticExpression::Unary(
+                            UnaryOperator::FunctionCall(id),
+                            Box::new(expr),
+                        )))
+                    } else {
+                        Ok(ExpressionType::Variable(id))
+                    }
+                }
+                // can this ever be reached?
+                _ => Err(
+                    ParseError::NeedsClearerError("Expected value within operator parsing").into(),
+                ),
+            }
+        }
     }
 
     pub fn parse_for(&mut self) -> Result<ForData> {

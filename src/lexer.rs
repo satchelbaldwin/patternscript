@@ -1,34 +1,4 @@
-#[derive(Debug, PartialEq, Hash, Clone)]
-
-pub enum Op {
-    Test,
-    And,
-    Or,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Exp,
-}
-
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub enum Condition {
-    Unless,
-    When,
-}
-
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub enum Keyword {
-    For,
-    Wait,
-    Spawn,
-    Bullet,
-    Path,
-    Pattern,
-    Let,
-    Seconds,
-    Frames,
-}
+use crate::types::Op;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
@@ -46,8 +16,27 @@ pub enum Token {
     Assign,
     Semicolon,
     Keyword(Keyword),
-    Condition(Condition),
+    Condition(ConditionToken),
     LexerError(char),
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Keyword {
+    For,
+    Wait,
+    Spawn,
+    Bullet,
+    Path,
+    Pattern,
+    Let,
+    Seconds,
+    Frames,
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum ConditionToken {
+    Unless,
+    When,
 }
 
 pub struct Lexer {
@@ -148,8 +137,8 @@ impl Lexer {
                     _ if exact_match("...") => Token::RangeSeparator,
                     _ if exact_match("and") => Token::Operator(Op::And),
                     _ if exact_match("or") => Token::Operator(Op::Or),
-                    _ if exact_match("unless") => Token::Condition(Condition::Unless),
-                    _ if exact_match("when") => Token::Condition(Condition::When),
+                    _ if exact_match("unless") => Token::Condition(ConditionToken::Unless),
+                    _ if exact_match("when") => Token::Condition(ConditionToken::When),
                     _ if exact_match("wait") => Token::Keyword(Keyword::Wait),
                     _ if exact_match("spawn") => Token::Keyword(Keyword::Spawn),
                     _ if exact_match("bullet") => Token::Keyword(Keyword::Bullet),
