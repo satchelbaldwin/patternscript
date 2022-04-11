@@ -2,6 +2,8 @@ pattern x = {
     iteration_type = time;
     length = 1.0 seconds;
     actions = {
-        origin = (1, 2) + 3;
+        origin = ((i - 1) * 80, (j - 1) * 80);
+        x = (1, (2, 3), (4, (5, 6 + 5)));
+        // origin = ((1 + 2));
     }
 }

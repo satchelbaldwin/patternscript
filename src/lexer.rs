@@ -61,9 +61,11 @@ impl Lexer {
     pub fn lookahead(&mut self, n: u32) -> Option<Token> {
         let previous_cursor = self.cursor;
         let mut i = 0;
-        while i < (n - 1) {
-            let _ = self.next_token();
-            i += 1;
+        if n > 0 {
+            while i < (n - 1) {
+                let _ = self.next_token();
+                i += 1;
+            }
         }
         let result = self.next_token();
         self.cursor = previous_cursor;

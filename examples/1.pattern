@@ -36,6 +36,7 @@ pattern phase1 = {
           wait 0.5 seconds;
 
           for (i = 0...3, j = 0...3) unless (i == 1 and j == 1) {
+               x = 1;
                spawn {
                     type = mid_sized;
                     position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))); 
