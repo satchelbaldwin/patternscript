@@ -278,13 +278,9 @@ impl Parser {
     //       three approaches to this problem, cited papers are also extremely helpful in the
     //       bibliography of the linked post.
     pub fn parse_expression(&mut self) -> Result<ExpressionType> {
-        println!("beginning expression: lookahead {:?}", self.lookahead(1));
+        println!("parsing expression starting with {:?}", self.lookahead(1));
         let expr = self.parse_expression_r();
-        println!("expression: {:?}", expr);
-        println!("lookahead: {:?}", self.lookahead(1));
-        println!("lookahead 2: {:?}", self.lookahead(2));
-
-        // special case for postfix time pseudo-datatype
+        // special case for pseudo-datatypes
         match self.lookahead(1)? {
             Token::Keyword(Keyword::Seconds) => {
                 self.next_token()?;
@@ -304,7 +300,20 @@ impl Parser {
                 // leave token to be consumed by parse_block
                 expr
             }
-            _ => Err(ParseError::NeedsClearerError("Expressions should end in } or ;.").into()),
+            Token::Assign => {
+                // leave token to be consumed by parse_path
+                expr
+            }
+            Token::CloseParen | Token::Comma => {
+                // leave to be consumed by op_or_vec
+                expr
+            }
+            x => {
+                println!("{:?}", x);
+                return Err(
+                    ParseError::NeedsClearerError("Expressions should end in } or ;.").into(),
+                );
+            }
         }
     }
     // inner recursive loop in the case of vectors
@@ -327,7 +336,7 @@ impl Parser {
                 let mut found_vector = false;
                 let mut nested_paren_level = 0;
                 let mut lookahead_n = 2; // t (open paren), we start at next
-                while !(t == Token::CloseParen && nested_paren_level == 0) {
+                while !(t == Token::CloseParen && nested_paren_level < 1) {
                     t = self.lookahead(lookahead_n)?;
                     if t == Token::OpenParen {
                         nested_paren_level += 1;
@@ -335,7 +344,7 @@ impl Parser {
                     if t == Token::CloseParen {
                         nested_paren_level -= 1;
                     }
-                    if t == Token::Comma && nested_paren_level == 0 {
+                    if t == Token::Comma && nested_paren_level < 1 {
                         found_vector = true;
                     }
                     lookahead_n += 1;
@@ -359,7 +368,10 @@ impl Parser {
                         }
                     }
                 } else {
-                    return self.parse_expression_p(0);
+                    self.next_token()?;
+                    let r = self.parse_expression_r();
+                    self.expect_next(Token::CloseParen)?;
+                    r
                 }
                 // not a vector: case handled by precedence
             }
@@ -424,7 +436,6 @@ impl Parser {
         // lookahead then consume on branch
 
         let t = self.lookahead(1)?;
-        println!("op or value: lookahead(1) {:?}", t);
         if matches!(t, Token::Operator(Op::Sub)) {
             // unary - precedence 4 left assoc
             self.next_token()?;
@@ -435,9 +446,7 @@ impl Parser {
             )))
         } else if t == Token::OpenParen {
             // parenthized expression
-            self.next_token()?;
-            let expr: Result<ExpressionType> = self.parse_expression_p(0);
-            self.expect_next(Token::CloseParen)?;
+            let expr: Result<ExpressionType> = self.parse_expression_r();
             expr
         } else {
             // could be value or fn call; hard to discern what a floating id means
@@ -465,9 +474,13 @@ impl Parser {
                     }
                 }
                 // can this ever be reached?
-                _ => Err(
-                    ParseError::NeedsClearerError("Expected value within operator parsing").into(),
-                ),
+                x => {
+                    println!("huh {:?}", x);
+                    return Err(ParseError::NeedsClearerError(
+                        "Expected value within operator parsing",
+                    )
+                    .into());
+                }
             }
         }
     }
@@ -547,13 +560,11 @@ impl Parser {
 
     pub fn parse_wait(&mut self) -> Result<WaitData> {
         let e = self.parse_expression()?;
-        let r = match self.next_token()? {
+        match self.next_token()? {
             Token::Keyword(Keyword::Frames) => Ok(WaitData::Frames(e)),
             Token::Keyword(Keyword::Seconds) => Ok(WaitData::Time(e)),
             w => Err(ParseError::Token(w).into()),
-        };
-        self.expect_next(Token::Semicolon)?;
-        r
+        }
     }
 
     pub fn parse_spawn(&mut self) -> Result<SpawnData> {
@@ -566,7 +577,10 @@ impl Parser {
     pub fn parse_path(&mut self) -> Result<NamedToplevel> {
         let name = self.next_token().context("Parsing path...")?;
         if let Token::Id(name) = name {
+            let arguments = self.parse_expression()?;
+            println!("ARGS: {:?}", arguments);
             self.expect_next(Token::Assign)?;
+
             let definitions = self.parse_values()?;
             let path_node = Node::Path(PathData { definitions });
             Ok((name, path_node))

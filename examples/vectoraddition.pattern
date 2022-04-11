@@ -1,0 +1,14 @@
+bullet mid_sized = {
+     sprite = "gameasset";
+     hitbox = (4, 4);
+     color = (255, 255, 0);
+}
+
+pattern x = {
+    iteration_type = time;
+    length = 1.0 seconds;
+    x = (20, 20);
+    actions = {
+        origin = x + (20 + 5, 20);
+    }
+}

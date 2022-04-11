@@ -4,10 +4,10 @@ bullet mid_sized = {
      color = (255, 255, 0);
 }
 
-//path downward_s_curve(t, speed, offset) = {
-//     x = (50 * sin(t)) + offset;
-//     y = t * speed;
-//}
+path downward_s_curve(t, speed, offset) = {
+     x = (50 * sin(t)) + offset;
+     y = t * speed;
+}
 
 pattern p2 = {
      actions =  {
@@ -26,10 +26,10 @@ pattern phase1 = {
           for (n = 0...5) {
                angle = towards_player;
                spawn {
-                    type = mid_sized,
-                    position = origin,
-                    direction = angle + n * 20,        // should handle precedence correctly here
-                    speed = 200,
+                    type = mid_sized;
+                    position = origin;
+                    direction = angle + n * 20;        // should handle precedence correctly here
+                    speed = 200;
                }
                wait 4 frames;
           }
@@ -37,8 +37,8 @@ pattern phase1 = {
 
           for (i = 0...3, j = 0...3) unless (i == 1 and j == 1) {
                spawn {
-                    type = mid_sized,
-                    position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))), 
+                    type = mid_sized;
+                    position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))); 
                }
           }
           wait 0.5 seconds;
