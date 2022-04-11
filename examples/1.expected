@@ -1,0 +1,141 @@
+Head(HeadData { 
+    definitions: {
+        "mid_sized": Bullet(BulletData { 
+            definitions: {
+                "color": Vector([Int(255), Int(255), Int(0)]), 
+                "hitbox": Vector([Int(4), Int(4)]), 
+                "sprite": String("gameasset")
+            } 
+        }), 
+        "downward_s_curve": Path(PathData { 
+            definitions: {
+                "x": Expr(Binary(Add, 
+                    Expr(Binary(Mul, 
+                        Int(50), 
+                        Expr(Unary(FunctionCall("sin"), Variable("t")))
+                    )), 
+                    Variable("offset")
+                )), 
+                "y": Expr(Binary(Mul, 
+                    Variable("t"), 
+                    Variable("speed")
+                ))
+            } 
+        }), 
+        "p2": Pattern(PatternData { 
+            block: Block { 
+                definitions: {
+                    "actions": Block(Block { 
+                        definitions: {}, 
+                        statements: [Spawn(SpawnData { definitions: {} })]
+                    })
+                }, 
+                statements: [] 
+            } 
+        }), 
+        "phase1": Pattern(PatternData { 
+            block: Block { 
+                definitions: {
+                    "length": Duration(Time(Float(6.0))), 
+                    "iteration_type": Variable("time"), 
+                    "actions": Block(Block { 
+                        definitions: {
+                            "origin": Expr(Binary(Add, 
+                                Variable("entity_position"), 
+                                Vector([Int(0), Int(20)]))
+                            )
+                        }, 
+                        statements: [
+                            For(ForData { 
+                                initial_definitions: {
+                                    "n": Range(0, 5)
+                                }, 
+                                condition: None, 
+                                body: Block { 
+                                    definitions: {
+                                        "angle": Variable("towards_player")
+                                    }, 
+                                    statements: [
+                                        Spawn(SpawnData { 
+                                            definitions: {
+                                                "position": Variable("origin"), 
+                                                "speed": Int(200), 
+                                                "type": Variable("mid_sized"), 
+                                                "direction": Expr(Binary(Add, 
+                                                    Variable("angle"), 
+                                                    Expr(Binary(Mul, 
+                                                        Variable("n"), 
+                                                        Int(20))
+                                                    )
+                                                ))
+                                            } 
+                                        }), 
+                                        Wait(Frames(Int(4)))
+                                    ] 
+                                } 
+                            }), 
+                            Wait(Time(Float(0.5))), 
+                            For(ForData { 
+                                initial_definitions: {
+                                    "j": Range(0, 3), 
+                                    "i": Range(0, 3)
+                                }, 
+                                condition: Unless(
+                                    Expr(Binary(And, 
+                                        Expr(Binary(Test, 
+                                            Variable("i"), 
+                                            Int(1)
+                                        )), 
+                                        Expr(Binary(Test, 
+                                            Variable("j"), 
+                                            Int(1)
+                                        ))
+                                    ))
+                                ), 
+                                body: Block { 
+                                    definitions: {
+                                        "x": Int(1)
+                                    }, 
+                                    statements: [
+                                        Spawn(SpawnData { 
+                                            definitions: {
+                                                "type": Variable("mid_sized"), 
+                                                "position_fn": Expr(Unary(
+                                                    FunctionCall("downward_s_curve"), 
+                                                    Vector([
+                                                        Variable("t"), 
+                                                        Int(200), 
+                                                        Expr(Binary(Add, 
+                                                            Variable("entity_position"), 
+                                                            Vector([
+                                                                Expr(Binary(Mul, 
+                                                                    Expr(Binary(Sub, 
+                                                                        Variable("i"), 
+                                                                        Int(1)
+                                                                    )), 
+                                                                    Int(80)
+                                                                )), 
+                                                                Expr(Binary(Mul, 
+                                                                    Expr(Binary(Sub, 
+                                                                        Variable("j"), 
+                                                                        Int(1))), 
+                                                                    Int(80)
+                                                                ))
+                                                            ])
+                                                        ))
+                                                    ])
+                                                ))
+                                            } 
+                                        })
+                                    ] 
+                                } 
+                            }), 
+                            Wait(Time(Float(0.5)))
+                        ] 
+                    }
+                )}, 
+                statements: [] 
+            } 
+        })
+    } 
+})
