@@ -1,6 +1,6 @@
 # patternscript_cli
 
-thin wrapper to print parse trees 
+thin wrapper to print parse trees / lex info
 
 ## building
 
@@ -21,4 +21,5 @@ requirements: a working rust/cargo installation
 
 example:
 
-`cargo run -- -p example/1.pattern`
+`cargo run -- -p example/1.pattern`  
+`patternscript_cli -p example/1.pattern`

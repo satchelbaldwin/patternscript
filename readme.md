@@ -58,9 +58,9 @@ pattern phase1 = {
 
 ## inspiration
 
-(bulletml)[https://www.asahi-net.or.jp/~cs8k-cyu/bulletml/index_e.html], the go-to existing declarative way to write these patterns
+[bulletml](https://www.asahi-net.or.jp/~cs8k-cyu/bulletml/index_e.html), the go-to existing declarative way to write these patterns
 
-visualizer ideas were inspired (by this implementation)[https://github.com/emillon/bulletml] of the above format
+visualizer ideas were inspired [by this implementation](https://github.com/emillon/bulletml) of the above format
 
 ## features
 
@@ -79,6 +79,8 @@ at least, that is the current goal.
 included ~~is~~ will be a visualizer *(soon)* and a thin cli wrapper for showing the debug information on parsing.
 
 ## language documentation
+
+*(language grammar itself is in `patternscript/`)*
 
 broadly, the language is a list of top-level definitions.  
 these definitions can be one of three things: a `pattern`, a `path`, or a `bullet.`  
@@ -137,7 +139,7 @@ which would skip all cases where the condition on the right is true.
 `when` clauses mean that all cases where the block on the right is true are executed.  
 `unless` clauses are the opposite.  
 
-- more here later - 
+more here later
 
 ## progress
 
