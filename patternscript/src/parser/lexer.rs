@@ -1,4 +1,4 @@
-use crate::types::Op;
+use super::types::Op;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {

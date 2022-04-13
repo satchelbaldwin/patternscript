@@ -1,5 +1,5 @@
-use crate::lexer::{ConditionToken, Keyword, Lexer, Token};
-use crate::types::Op;
+use super::lexer::{ConditionToken, Keyword, Lexer, Token};
+use super::types::Op;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 //use std::fmt;
@@ -29,7 +29,7 @@ pub enum ParseError {
 
 #[derive(Debug)]
 pub struct HeadData {
-    definitions: HashMap<String, Node>,
+    pub definitions: HashMap<String, Node>,
 }
 
 type Values = HashMap<String, ExpressionType>;
@@ -61,8 +61,8 @@ pub enum ExpressionType {
 
 #[derive(Debug)]
 pub struct Block {
-    definitions: Values,
-    statements: Vec<Node>,
+    pub definitions: Values,
+    pub statements: Vec<Node>,
 }
 
 impl Block {
@@ -76,23 +76,24 @@ impl Block {
 
 #[derive(Debug)]
 pub struct PatternData {
-    block: Block,
+    pub block: Block,
 }
 
 #[derive(Debug)]
 pub struct BulletData {
-    definitions: Values,
+    pub definitions: Values,
 }
 
 #[derive(Debug)]
 pub struct PathData {
-    definitions: Values,
+    pub arguments: ExpressionType,
+    pub definitions: Values,
 }
 
 #[derive(Debug)]
 pub struct AssignmentData {
-    lvalue: String,
-    rvalue: ExpressionType,
+    pub lvalue: String,
+    pub rvalue: ExpressionType,
 }
 
 #[derive(Debug)]
@@ -110,14 +111,14 @@ pub enum Condition {
 
 #[derive(Debug)]
 pub struct ForData {
-    initial_definitions: Values,
-    condition: Condition,
-    body: Block,
+    pub initial_definitions: Values,
+    pub condition: Condition,
+    pub body: Block,
 }
 
 #[derive(Debug)]
 pub struct SpawnData {
-    definitions: Values,
+    pub definitions: Values,
 }
 
 #[derive(Debug)]
@@ -132,15 +133,6 @@ pub enum Node {
     Spawn(SpawnData),
 }
 
-/*impl fmt::Display for Node {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_single(n: &Node, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "test")
-        }
-        fmt_single(&self, f)
-    }
-}*/
-
 type NamedToplevel = (String, Node);
 
 pub struct Parser {
@@ -148,23 +140,31 @@ pub struct Parser {
 }
 
 impl Parser {
+    pub fn parse_from_string(source: String) -> Result<Node> {
+        Parser::new(Lexer::new(source)).evaluate()
+    }
+
+    pub fn parse_from_file(path: String) -> Result<Node> {
+        Parser::parse_from_string(std::fs::read_to_string(path)?)
+    }
+
     pub fn new(lexer: Lexer) -> Parser {
         Parser { lexer }
     }
 
-    pub fn next_token(&mut self) -> Result<Token> {
+    fn next_token(&mut self) -> Result<Token> {
         self.lexer
             .next_token()
             .ok_or_else(|| ParseError::EOF.into())
     }
 
-    pub fn lookahead(&mut self, n: u32) -> Result<Token> {
+    fn lookahead(&mut self, n: u32) -> Result<Token> {
         self.lexer
             .lookahead(n)
             .ok_or_else(|| ParseError::EOF.into())
     }
 
-    pub fn expect_next(&mut self, expected: Token) -> Result<Token> {
+    fn expect_next(&mut self, expected: Token) -> Result<Token> {
         let t = self.next_token()?;
         if t != expected {
             return Err(ParseError::Expected(expected, t).into());
@@ -176,7 +176,7 @@ impl Parser {
         self.parse_head()
     }
 
-    pub fn parse_head(&mut self) -> Result<Node> {
+    fn parse_head(&mut self) -> Result<Node> {
         let mut head = Node::Head(HeadData {
             definitions: HashMap::new(),
         });
@@ -199,7 +199,7 @@ impl Parser {
         Ok(head)
     }
 
-    pub fn parse_pattern(&mut self) -> Result<NamedToplevel> {
+    fn parse_pattern(&mut self) -> Result<NamedToplevel> {
         let name = self.next_token().context("Parsing pattern...")?;
         if let Token::Id(name) = name {
             self.expect_next(Token::Assign)?;
@@ -211,7 +211,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_block(&mut self) -> Result<Block> {
+    fn parse_block(&mut self) -> Result<Block> {
         self.expect_next(Token::OpenBlock)
             .context("Parsing block...")?;
 
@@ -249,7 +249,7 @@ impl Parser {
     }
 
     // faster case for block when no imperative/ordered actions
-    pub fn parse_values(&mut self) -> Result<Values> {
+    fn parse_values(&mut self) -> Result<Values> {
         self.expect_next(Token::OpenBlock)
             .context("Parsing values...")?;
 
@@ -270,13 +270,10 @@ impl Parser {
         Ok(definitions)
     }
 
-    // note: currently, this should consume ending `;` or `,`
-    //       should it? is this a good idea?
-    //
     // note: excellent article https://www.engr.mun.ca/~theo/Misc/exp_parsing.htm with details about
     //       three approaches to this problem, cited papers are also extremely helpful in the
     //       bibliography of the linked post.
-    pub fn parse_expression(&mut self) -> Result<ExpressionType> {
+    fn parse_expression(&mut self) -> Result<ExpressionType> {
         let expr = self.parse_expression_r();
         // special case for pseudo-datatypes
         match self.lookahead(1)? {
@@ -315,7 +312,7 @@ impl Parser {
         }
     }
     // inner recursive loop in the case of vectors
-    pub fn parse_expression_r(&mut self) -> Result<ExpressionType> {
+    fn parse_expression_r(&mut self) -> Result<ExpressionType> {
         let t = self.lookahead(1)?;
         match t {
             Token::OpenBlock => {
@@ -332,7 +329,7 @@ impl Parser {
         }
     }
     // precedence handling -- the meat
-    pub fn parse_expression_p(&mut self, precedence: u32) -> Result<ExpressionType> {
+    fn parse_expression_p(&mut self, precedence: u32) -> Result<ExpressionType> {
         // initially set tree to first value -- we'll move ownership at each step
         let mut tree = self.parse_operator_or_value()?;
         loop {
@@ -363,11 +360,10 @@ impl Parser {
         Ok(tree)
     }
 
-    pub fn operator_precedence(&self, op: &Op) -> u32 {
+    fn operator_precedence(&self, op: &Op) -> u32 {
         // precedence:
-        //   0?: PAREN/VECTOR
-        //   1L: OR
-        //   2L: AND
+        //   0?: OR
+        //   1L: AND
         //   2L: ==
         //   3L: +-
         //   4L: - (UNARY)
@@ -384,9 +380,8 @@ impl Parser {
         }
     }
 
-    pub fn parse_operator_or_value(&mut self) -> Result<ExpressionType> {
+    fn parse_operator_or_value(&mut self) -> Result<ExpressionType> {
         // lookahead then consume on branch
-
         let mut t = self.lookahead(1)?;
         if matches!(t, Token::Operator(Op::Sub)) {
             // unary - precedence 4 left assoc
@@ -417,11 +412,10 @@ impl Parser {
                 }
                 lookahead_n += 1;
             }
-
             // we are dealing with a vector
             if found_vector {
                 let mut v: Vec<ExpressionType> = Vec::new();
-                // consume open paren
+                // consume open paren to solve recursive loop from not moving
                 self.expect_next(Token::OpenParen)?;
                 loop {
                     v.push(self.parse_expression_r()?);
@@ -466,10 +460,9 @@ impl Parser {
                         Ok(ExpressionType::Variable(id))
                     }
                 }
-                // can this ever be reached?
-                x => {
+                _ => {
                     return Err(ParseError::NeedsClearerError(
-                        "Expected value within operator parsing",
+                        "Expected value within operator parsing, got token",
                     )
                     .into());
                 }
@@ -477,7 +470,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_for(&mut self) -> Result<ForData> {
+    fn parse_for(&mut self) -> Result<ForData> {
         let mut for_data = ForData {
             initial_definitions: HashMap::new(),
             condition: Condition::None,
@@ -520,7 +513,7 @@ impl Parser {
         Ok(for_data)
     }
 
-    pub fn parse_number(&mut self) -> Result<ExpressionType> {
+    fn parse_number(&mut self) -> Result<ExpressionType> {
         let t = self.next_token()?;
         match t {
             Token::Number(n) => {
@@ -534,7 +527,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_range(&mut self) -> Result<ExpressionType> {
+    fn parse_range(&mut self) -> Result<ExpressionType> {
         let start = self.parse_number()?;
         self.expect_next(Token::RangeSeparator)?;
         let end = self.parse_number()?;
@@ -550,7 +543,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_wait(&mut self) -> Result<WaitData> {
+    fn parse_wait(&mut self) -> Result<WaitData> {
         let expr = self.parse_expression()?;
         match expr {
             ExpressionType::Duration(wd) => Ok(*wd),
@@ -558,28 +551,31 @@ impl Parser {
         }
     }
 
-    pub fn parse_spawn(&mut self) -> Result<SpawnData> {
+    fn parse_spawn(&mut self) -> Result<SpawnData> {
         let block = self.parse_block()?;
         Ok(SpawnData {
             definitions: block.definitions,
         })
     }
 
-    pub fn parse_path(&mut self) -> Result<NamedToplevel> {
+    fn parse_path(&mut self) -> Result<NamedToplevel> {
         let name = self.next_token().context("Parsing path...")?;
         if let Token::Id(name) = name {
             let arguments = self.parse_expression()?;
             self.expect_next(Token::Assign)?;
 
             let definitions = self.parse_values()?;
-            let path_node = Node::Path(PathData { definitions });
+            let path_node = Node::Path(PathData {
+                definitions,
+                arguments,
+            });
             Ok((name, path_node))
         } else {
             Err(ParseError::Expected(Token::String("Id".to_string()), name).into())
         }
     }
 
-    pub fn parse_bullet(&mut self) -> Result<NamedToplevel> {
+    fn parse_bullet(&mut self) -> Result<NamedToplevel> {
         let name = self.next_token().context("Parsing bullet...")?;
         if let Token::Id(name) = name {
             self.expect_next(Token::Assign)?;

@@ -24,10 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "patternscript_visual"
-version = "0.1.0"
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"

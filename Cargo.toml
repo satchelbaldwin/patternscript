@@ -1,11 +1,7 @@
-[package]
-name = "patternscript"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-ordered-float = "2.10.0"
-thiserror = "1.0.30"
-anyhow = "1.0"
+members = [
+    "patternscript",
+    "patternscript_cli",
+    "patternscript_visual"
+]
