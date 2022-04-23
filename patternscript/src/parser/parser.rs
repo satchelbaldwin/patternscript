@@ -32,7 +32,7 @@ pub struct HeadData {
     pub definitions: HashMap<String, Node>,
 }
 
-type Values = HashMap<String, ExpressionType>;
+pub type Values = HashMap<String, ExpressionType>;
 
 #[derive(Debug)]
 pub enum ArithmeticExpression {
@@ -57,6 +57,7 @@ pub enum ExpressionType {
     Duration(Box<WaitData>),
     Vector(Vec<ExpressionType>),
     Expr(ArithmeticExpression),
+    None,
 }
 
 #[derive(Debug)]
@@ -275,6 +276,7 @@ impl Parser {
     //       bibliography of the linked post.
     fn parse_expression(&mut self) -> Result<ExpressionType> {
         let expr = self.parse_expression_r();
+        println!("{:?}", expr);
         // special case for pseudo-datatypes
         match self.lookahead(1)? {
             Token::Keyword(Keyword::Seconds) => {
@@ -449,6 +451,15 @@ impl Parser {
                     if next_t == Token::OpenParen {
                         // consume singular so we know we have ( on deck
                         self.next_token()?;
+                        // check for function call with no arguments
+                        if self.lookahead(2)? == Token::CloseParen {
+                            self.next_token()?; // (
+                            self.next_token()?; // )
+                            return Ok(ExpressionType::Expr(ArithmeticExpression::Unary(
+                                UnaryOperator::FunctionCall(id),
+                                Box::new(ExpressionType::None),
+                            )));
+                        }
                         let expr = self.parse_expression_r()?;
                         // hopefully a vector? should be or we crash probs
                         Ok(ExpressionType::Expr(ArithmeticExpression::Unary(
