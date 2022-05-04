@@ -27,26 +27,26 @@ pub enum ParseError {
     NeedsClearerError(&'static str),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HeadData {
     pub definitions: HashMap<String, Node>,
 }
 
 pub type Values = HashMap<String, ExpressionType>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ArithmeticExpression {
     Unary(UnaryOperator, Box<ExpressionType>),
     Binary(Op, Box<ExpressionType>, Box<ExpressionType>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOperator {
     Negate,
     FunctionCall(String), // Unary(FunctionCall(name of function), (boxed args vec: see above enum))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExpressionType {
     Int(i64),
     Float(f64),
@@ -60,7 +60,7 @@ pub enum ExpressionType {
     None,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub definitions: Values,
     pub statements: Vec<Node>,
@@ -75,54 +75,54 @@ impl Block {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PatternData {
     pub block: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BulletData {
     pub definitions: Values,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PathData {
     pub arguments: ExpressionType,
     pub definitions: Values,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssignmentData {
     pub lvalue: String,
     pub rvalue: ExpressionType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WaitData {
     Frames(ExpressionType),
     Time(ExpressionType),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Condition {
     When(ExpressionType),
     Unless(ExpressionType),
     None,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ForData {
     pub initial_definitions: Values,
     pub condition: Condition,
     pub body: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpawnData {
     pub definitions: Values,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Head(HeadData),
     Pattern(PatternData),
@@ -276,7 +276,6 @@ impl Parser {
     //       bibliography of the linked post.
     fn parse_expression(&mut self) -> Result<ExpressionType> {
         let expr = self.parse_expression_r();
-        println!("{:?}", expr);
         // special case for pseudo-datatypes
         match self.lookahead(1)? {
             Token::Keyword(Keyword::Seconds) => {
@@ -306,7 +305,6 @@ impl Parser {
                 expr
             }
             x => {
-                println!("{:?}", x);
                 return Err(
                     ParseError::NeedsClearerError("Expressions should end in } or ;.").into(),
                 );
