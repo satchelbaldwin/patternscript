@@ -10,3 +10,5 @@ name = "patternscript"
 [dependencies]
 anyhow = "1.0.56"
 thiserror = "1.0.30"
+cgmath = "0.18.0"
+ouroboros = "0.15.0"

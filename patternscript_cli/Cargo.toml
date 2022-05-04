@@ -8,3 +8,4 @@ publish = false
 
 [dependencies]
 patternscript = {path = "../patternscript"}
+cgmath = "0.18.0"

@@ -1,6 +1,7 @@
 bullet mid_sized = {
      sprite = "gameasset";
      hitbox = (4, 4);
+     shape = "rectangle";
      color = (255, 255, 0);
 }
 
@@ -24,7 +25,7 @@ pattern phase1 = {
           origin = entity_position + (0, 20);
 
           for (n = 0...5) {
-               angle = towards_player;
+               angle = towards_player();
                spawn {
                     type = mid_sized;
                     position = origin;
