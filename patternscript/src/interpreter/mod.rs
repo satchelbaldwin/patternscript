@@ -90,7 +90,11 @@ impl<'a> Interpreter<'a> {
 
     pub fn spawn_direct(&mut self, entity: &Entity) {
         self.entities.push(ExecutionEnvironment::new(entity));
-        self.actions.push(entity.compile_behavior());
+        if let Some(new_actions) =
+            entity.compile_behavior(&self.paths, &self.patterns, &self.prefabs, self.fps)
+        {
+            self.actions.push(new_actions);
+        }
     }
 
     pub fn spawn_named(&mut self, name: String) {
@@ -124,7 +128,14 @@ impl<'a> Interpreter<'a> {
                         CallbackResult::AddEntities(ents) => {
                             for ent in &ents {
                                 pooled_new_entities.push(ExecutionEnvironment::new(ent));
-                                pooled_new_actions.push(ent.compile_behavior());
+                                if let Some(new_actions) = ent.compile_behavior(
+                                    &self.paths,
+                                    &self.patterns,
+                                    &self.prefabs,
+                                    self.fps,
+                                ) {
+                                    pooled_new_actions.push(new_actions);
+                                }
                             }
                         }
                         CallbackResult::Delete => batched_deletions.push(i),

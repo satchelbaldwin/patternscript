@@ -1,5 +1,6 @@
+use super::closure::Callback;
 use crate::interpreter::{EntityMap, PathMap, PatternMap};
-use crate::parser::parser::PatternData;
+use crate::parser::parser::{Node, PatternData};
 use cgmath::{Deg, Vector2, Vector3};
 use std::fmt;
 
@@ -62,7 +63,7 @@ pub struct EntityCallback<'a>(
 #[derive(Debug)]
 pub struct TimedCallback<'a> {
     pub func: EntityCallback<'a>,
-    pub frame: u16,
+    pub frame: u32,
 }
 
 impl<'a> fmt::Debug for EntityCallback<'a> {
@@ -74,7 +75,7 @@ impl<'a> fmt::Debug for EntityCallback<'a> {
 impl<'a> TimedCallback<'a> {
     pub fn new(
         c: impl 'a + Fn(&mut ExecutionEnvironment, &PathMap, &PatternMap, &EntityMap) -> CallbackResult,
-        frame: u16,
+        frame: u32,
     ) -> Self {
         TimedCallback {
             func: EntityCallback(Box::new(c)),
@@ -85,9 +86,9 @@ impl<'a> TimedCallback<'a> {
 
 #[derive(Debug)]
 pub struct ExecutionEnvironment {
-    pub elapsed: u16,
-    pub duration: u16,
-    pub current_wait: u16,
+    pub elapsed: u32,
+    pub duration: u32,
+    pub current_wait: u32,
     pub entity: Entity,
 }
 
@@ -103,7 +104,18 @@ impl ExecutionEnvironment {
 }
 
 impl<'a> Entity {
-    pub fn compile_behavior(&self) -> Vec<TimedCallback<'a>> {
-        return Vec::new();
+    pub fn compile_behavior(
+        &self,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        fps: u16,
+    ) -> Option<Vec<TimedCallback<'a>>> {
+        match &self.behavior {
+            Behavior::Pattern(pd) => {
+                Some(Node::Pattern(patterns.get(pd)?.clone()).create(paths, patterns, ents, fps))
+            }
+            Behavior::Simple => None,
+        }
     }
 }

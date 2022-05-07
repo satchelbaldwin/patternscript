@@ -23,6 +23,8 @@ pub enum ParseError {
     RangeMustBeInt,
     #[error("Bad vector element.")]
     BadVecElement,
+    #[error("Time error: frames must be integers, seconds must be numeric.")]
+    TimeTypeError,
     #[error("{0}")]
     NeedsClearerError(&'static str),
 }
@@ -281,12 +283,22 @@ impl Parser {
             Token::Keyword(Keyword::Seconds) => {
                 self.next_token()?;
                 self.expect_next(Token::Semicolon)?;
-                Ok(ExpressionType::Duration(Box::new(WaitData::Time(expr?))))
+                let expr = expr?;
+                if matches!(expr, ExpressionType::Int(_) | ExpressionType::Float(_)) {
+                    Ok(ExpressionType::Duration(Box::new(WaitData::Time(expr))))
+                } else {
+                    Err(ParseError::TimeTypeError.into())
+                }
             }
             Token::Keyword(Keyword::Frames) => {
                 self.next_token()?;
                 self.expect_next(Token::Semicolon)?;
-                Ok(ExpressionType::Duration(Box::new(WaitData::Frames(expr?))))
+                let expr = expr?;
+                if matches!(expr, ExpressionType::Int(_)) {
+                    Ok(ExpressionType::Duration(Box::new(WaitData::Frames(expr))))
+                } else {
+                    Err(ParseError::TimeTypeError.into())
+                }
             }
             Token::Semicolon => {
                 self.next_token()?;
@@ -304,7 +316,7 @@ impl Parser {
                 // leave to be consumed by op_or_vec
                 expr
             }
-            x => {
+            _x => {
                 return Err(
                     ParseError::NeedsClearerError("Expressions should end in } or ;.").into(),
                 );

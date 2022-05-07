@@ -1,7 +1,9 @@
+use patternscript::interpreter::closure::*;
 use patternscript::interpreter::entity::{Entity, Hitbox};
 use patternscript::interpreter::*;
 use patternscript::parser::lexer::{Lexer, Token};
 use patternscript::parser::parser::*;
+use patternscript::parser::types::Op;
 use std::env;
 use std::fs;
 use std::process;
@@ -69,5 +71,25 @@ fn main() {
         world.step();
 
         println!("{:?}", world);
+    }
+
+    if &args[1] == "-e" {
+        let expr = ExpressionType::Expr(ArithmeticExpression::Binary(
+            Op::Add,
+            Box::new(ExpressionType::Int(1)),
+            Box::new(ExpressionType::Expr(ArithmeticExpression::Binary(
+                Op::Sub,
+                Box::new(ExpressionType::Variable("x".to_string())),
+                Box::new(ExpressionType::Expr(ArithmeticExpression::Unary(
+                    UnaryOperator::Negate,
+                    Box::new(ExpressionType::Int(10)),
+                ))),
+            ))),
+        ));
+
+        let mut values = Values::new();
+        values.insert("x".to_string(), ExpressionType::Int(10));
+
+        println!("{:?}", expr.eval(&values));
     }
 }

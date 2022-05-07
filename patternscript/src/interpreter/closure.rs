@@ -22,11 +22,6 @@ pub enum RuntimeError {
     OperatorTypeError(Op, Primitive, Primitive),
 }
 
-trait Callback<'a> {
-    fn create(self) -> Vec<TimedCallback<'a>>;
-    fn create_inner(self, time: u16, values: Values) -> Vec<TimedCallback<'a>>;
-}
-
 #[derive(Debug)]
 pub enum Primitive {
     I64(i64),
@@ -39,7 +34,7 @@ pub enum Primitive {
 }
 
 #[derive(Debug)]
-enum PrimitiveVecOp {
+pub enum PrimitiveVecOp {
     Add,
     Sub,
     Mul,
@@ -112,7 +107,7 @@ fn primitive_vec_arithmetic(
     }
 }
 
-trait Evaluable {
+pub trait Evaluable {
     fn eval(self, v: &Values) -> Result<Primitive>;
 }
 impl Evaluable for ArithmeticExpression {
@@ -303,8 +298,35 @@ impl Evaluable for ExpressionType {
     }
 }
 
+pub trait Callback<'a> {
+    fn create(
+        self,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        fps: u16,
+    ) -> Vec<TimedCallback<'a>>;
+    fn create_inner(
+        self,
+        time: &mut u32,
+        values: Values,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        fps: u16,
+    ) -> Vec<TimedCallback<'a>>;
+}
+
 impl<'a> Callback<'a> for Node {
-    fn create_inner(self, time: u16, values: Values) -> Vec<TimedCallback<'a>> {
+    fn create_inner(
+        self,
+        time: &mut u32,
+        values: Values,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        fps: u16,
+    ) -> Vec<TimedCallback<'a>> {
         let mut result: Vec<TimedCallback<'a>> = Vec::new();
 
         match self {
@@ -312,25 +334,57 @@ impl<'a> Callback<'a> for Node {
             Node::For(fd) => {}
             Node::Head(hd) => {}
             Node::Path(pd) => {}
-            Node::Pattern(pd) => {}
+            Node::Pattern(pd) => {
+                let mut inner_values = values.clone();
+                inner_values.extend(pd.block.definitions);
+                for statement in pd.block.statements {
+                    let mut r = statement.create_inner(
+                        time,
+                        inner_values.clone(),
+                        paths,
+                        patterns,
+                        ents,
+                        fps,
+                    );
+                    if r.len() > 0 {
+                        result.append(&mut r);
+                    }
+                }
+            }
             Node::Spawn(sd) => {}
-            Node::Wait(wd) => {}
+            // TODO WAIT //
+            Node::Wait(wd) => match wd {
+                // parser precondition that waitdata::variants are of specific types
+                // frames: int
+                // time:   int/float
+                WaitData::Frames(f) => {
+                    if let ExpressionType::Int(f) = f {
+                        *time = *time + f as u32;
+                    }
+                }
+                WaitData::Time(t) => match t {
+                    ExpressionType::Int(i) => {
+                        // wait negative seconds doesn't make sense//scary cast i64>u32
+                        *time = *time + i as u32 * fps as u32;
+                    }
+                    ExpressionType::Float(f) => *time = *time + (f * fps as f64).floor() as u32,
+                    _ => {
+                        panic!("this should be caught by the parser, if you see this i made a regression, please report a bug")
+                    }
+                },
+            },
         }
 
         result
     }
-    fn create(self) -> Vec<TimedCallback<'a>> {
-        self.create_inner(0, HashMap::new())
-    }
-}
-
-impl<'a> Callback<'a> for ExpressionType {
-    fn create_inner(self, time: u16, values: Values) -> Vec<TimedCallback<'a>> {
-        let mut result: Vec<TimedCallback<'a>> = Vec::new();
-
-        result
-    }
-    fn create(self) -> Vec<TimedCallback<'a>> {
-        self.create_inner(0, HashMap::new())
+    fn create(
+        self,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        fps: u16,
+    ) -> Vec<TimedCallback<'a>> {
+        let mut time: u32 = 0;
+        self.create_inner(&mut time, HashMap::new(), paths, patterns, ents, fps)
     }
 }
