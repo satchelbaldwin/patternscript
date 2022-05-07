@@ -125,7 +125,11 @@ impl Lexer {
                     '-' => Token::Operator(Op::Sub),
                     '*' => Token::Operator(Op::Mul),
                     '^' => Token::Operator(Op::Exp),
+                    '>' => Token::Operator(Op::GT),
+                    '<' => Token::Operator(Op::LT),
                     _ if exact_match("==") => Token::Operator(Op::Test),
+                    _ if exact_match(">=") => Token::Operator(Op::GTE),
+                    _ if exact_match("<=") => Token::Operator(Op::LTE),
                     '=' => Token::Assign,
                     _ if exact_match("//") => {
                         while chars[self.lookahead_cursor] != '\n' {

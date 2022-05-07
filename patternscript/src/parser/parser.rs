@@ -364,7 +364,7 @@ impl Parser {
         // precedence:
         //   0?: OR
         //   1L: AND
-        //   2L: ==
+        //   2L: == GT LT
         //   3L: +-
         //   4L: - (UNARY)
         //   5L: */
@@ -372,7 +372,7 @@ impl Parser {
         match op {
             Op::Or => 0,
             Op::And => 1,
-            Op::Test => 2,
+            Op::Test | Op::GT | Op::LT | Op::GTE | Op::LTE => 2,
             // unary minus: => 4, somewhere else
             Op::Add | Op::Sub => 3,
             Op::Div | Op::Mul => 5,

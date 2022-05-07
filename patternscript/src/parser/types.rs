@@ -13,4 +13,8 @@ pub enum Op {
     Mul,
     Div,
     Exp,
+    GT,
+    LT,
+    GTE,
+    LTE,
 }

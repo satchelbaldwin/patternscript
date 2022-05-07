@@ -14,6 +14,12 @@ pub enum RuntimeError {
     ComputeTypeError,
     #[error("Cannot negate non-integer type")]
     NegateNonInt,
+    #[error("Vector arithmetic typing error")]
+    VecArithTypeError,
+    #[error("Vector types can only be int/float/string.")]
+    VecTypeError,
+    #[error("Type error: Operator {0:?} not defined for types {1:?} and {2:?}")]
+    OperatorTypeError(Op, Primitive, Primitive),
 }
 
 trait Callback<'a> {
@@ -21,13 +27,89 @@ trait Callback<'a> {
     fn create_inner(self, time: u16, values: Values) -> Vec<TimedCallback<'a>>;
 }
 
-enum Primitive {
+#[derive(Debug)]
+pub enum Primitive {
     I64(i64),
     F64(f64),
     String(String),
     IntVec(Vec<i64>),
     FloatVec(Vec<f64>),
     StrVec(Vec<String>),
+    Bool(bool),
+}
+
+#[derive(Debug)]
+enum PrimitiveVecOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+fn primitive_vec_arithmetic(
+    op: PrimitiveVecOp,
+    lhs: Primitive,
+    rhs: Primitive,
+) -> Result<Primitive> {
+    use Primitive::*;
+    use PrimitiveVecOp::*;
+    fn zipmap_vec<A, B, C>(func: fn((&A, &B)) -> C, lhs: &[A], rhs: &[B]) -> Vec<C> {
+        lhs.iter().zip(rhs.iter()).map(func).collect()
+    }
+    match (lhs, rhs) {
+        // longhand as some i (X) i -> f, such as 2: i / 4: i -> f
+        (IntVec(lh), IntVec(rh)) => match op {
+            Add => Ok(IntVec(zipmap_vec(|(l, r)| l + r, &lh, &rh))),
+            Sub => Ok(IntVec(zipmap_vec(|(l, r)| l - r, &lh, &rh))),
+            Mul => Ok(FloatVec(zipmap_vec(
+                |(l, r)| *l as f64 * *r as f64,
+                &lh,
+                &rh,
+            ))),
+            Div => Ok(FloatVec(zipmap_vec(
+                |(l, r)| *l as f64 / *r as f64,
+                &lh,
+                &rh,
+            ))),
+        },
+        // shorthand syntax as all f (X) f -> f
+        (FloatVec(lh), FloatVec(rh)) => Ok(FloatVec(zipmap_vec(
+            match op {
+                Add => |(l, r)| l + r,
+                Sub => |(l, r)| l - r,
+                Mul => |(l, r)| l * r,
+                Div => |(l, r)| l / r,
+            },
+            &lh,
+            &rh,
+        ))),
+        // shorthand, all f (X) i -> f and i (X) f -> f
+        // note: we need to matches here to preserve ordering as x: intvec - y: floatvec != x: floatvec - y: floatvec
+        //       sub/div are not commutative, and binding types as same name will remove the information on ordering
+        (IntVec(lh), FloatVec(rh)) => Ok(FloatVec(zipmap_vec(
+            match op {
+                // annotating one fixes coercion
+                Add => |(l, r): (&i64, &f64)| *l as f64 + r,
+                Sub => |(l, r)| *l as f64 - r,
+                Mul => |(l, r)| *l as f64 * r,
+                Div => |(l, r)| *l as f64 / r,
+            },
+            &lh,
+            &rh,
+        ))),
+
+        (FloatVec(lh), IntVec(rh)) => Ok(FloatVec(zipmap_vec(
+            match op {
+                Add => |(l, r): (&f64, &i64)| l + *r as f64,
+                Sub => |(l, r)| l - *r as f64,
+                Mul => |(l, r)| l * *r as f64,
+                Div => |(l, r)| l / *r as f64,
+            },
+            &lh,
+            &rh,
+        ))),
+        _ => (Err(RuntimeError::VecArithTypeError.into())),
+    }
 }
 
 trait Evaluable {
@@ -35,23 +117,121 @@ trait Evaluable {
 }
 impl Evaluable for ArithmeticExpression {
     fn eval(self, v: &Values) -> Result<Primitive> {
+        use Primitive::*;
         match self {
             ArithmeticExpression::Unary(op, val) => match op {
                 UnaryOperator::FunctionCall(fn_name) => {
                     // todo: defining builtin funcs should be broken into their own file
                     // todo: all functions return 0.0f
-                    Ok(Primitive::F64(0.0))
+                    Ok(F64(0.0))
                 }
                 UnaryOperator::Negate => match (*val).eval(v)? {
-                    Primitive::F64(f) => Ok(Primitive::F64(-1.0 * f)),
-                    Primitive::I64(i) => Ok(Primitive::I64(-1 * i)),
+                    F64(f) => Ok(F64(-1.0 * f)),
+                    I64(i) => Ok(I64(-1 * i)),
                     _ => Err(RuntimeError::NegateNonInt.into()),
                 },
             },
             ArithmeticExpression::Binary(op, lhs, rhs) => match op {
-                // todo: finish arithmetic returns
-                Op::Test => {}
-                _ => {}
+                // for repeated inner functions, they have to be repeated so that the inner typing is different
+                // match arms need the same types
+                // todo: refactor for macros at some point?
+                Op::Add => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(I64(l + r)),
+                    (F64(l), F64(r)) => Ok(F64(l + r)),
+                    (I64(i), F64(f)) | (F64(f), I64(i)) => Ok(F64(i as f64 + f)),
+                    (Primitive::String(l), Primitive::String(r)) => Ok(Primitive::String(l + &r)),
+                    // for any combination of l, r are either intvec or floatvec
+                    (l, r)
+                        if (matches!(l, Primitive::IntVec(_) | Primitive::FloatVec(_))
+                            && matches!(r, Primitive::IntVec(_) | Primitive::FloatVec(_))) =>
+                    {
+                        primitive_vec_arithmetic(PrimitiveVecOp::Add, l, r)
+                    }
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Sub => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(I64(l - r)),
+                    (F64(l), F64(r)) => Ok(F64(l - r)),
+                    (I64(i), F64(f)) | (F64(f), I64(i)) => Ok(F64(i as f64 - f)),
+                    (l, r)
+                        if (matches!(l, Primitive::IntVec(_) | Primitive::FloatVec(_))
+                            && matches!(r, Primitive::IntVec(_) | Primitive::FloatVec(_))) =>
+                    {
+                        primitive_vec_arithmetic(PrimitiveVecOp::Sub, l, r)
+                    }
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Mul => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(I64(l * r)),
+                    (F64(l), F64(r)) => Ok(F64(l * r)),
+                    (I64(i), F64(f)) | (F64(f), I64(i)) => Ok(F64(i as f64 * f)),
+                    (l, r)
+                        if (matches!(l, Primitive::IntVec(_) | Primitive::FloatVec(_))
+                            && matches!(r, Primitive::IntVec(_) | Primitive::FloatVec(_))) =>
+                    {
+                        primitive_vec_arithmetic(PrimitiveVecOp::Mul, l, r)
+                    }
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Div => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(I64(l / r)),
+                    (F64(l), F64(r)) => Ok(F64(l / r)),
+                    (I64(i), F64(f)) | (F64(f), I64(i)) => Ok(F64(i as f64 / f)),
+                    (l, r)
+                        if (matches!(l, Primitive::IntVec(_) | Primitive::FloatVec(_))
+                            && matches!(r, Primitive::IntVec(_) | Primitive::FloatVec(_))) =>
+                    {
+                        primitive_vec_arithmetic(PrimitiveVecOp::Div, l, r)
+                    }
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Exp => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(I64(l.pow(r.try_into().unwrap()))),
+                    (F64(l), F64(r)) => Ok(F64(l.powf(r))),
+                    (I64(l), F64(r)) => Ok(F64((l as f64).powf(r))),
+                    (F64(l), I64(r)) => Ok(F64(l.powf(r as f64))),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::And => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (Bool(l), Bool(r)) => Ok(Bool(l && r)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Or => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (Bool(l), Bool(r)) => Ok(Bool(l || r)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::Test => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (Bool(l), Bool(r)) => Ok(Bool(l == r)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::GT => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(Bool(l > r)),
+                    (F64(l), F64(r)) => Ok(Bool(l > r)),
+                    (I64(l), F64(r)) => Ok(Bool(l as f64 > r)),
+                    (F64(l), I64(r)) => Ok(Bool(l > r as f64)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::GTE => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(Bool(l >= r)),
+                    (F64(l), F64(r)) => Ok(Bool(l >= r)),
+                    (I64(l), F64(r)) => Ok(Bool(l as f64 >= r)),
+                    (F64(l), I64(r)) => Ok(Bool(l >= r as f64)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::LT => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(Bool(l < r)),
+                    (F64(l), F64(r)) => Ok(Bool(l < r)),
+                    (I64(l), F64(r)) => Ok(Bool((l as f64) < r)),
+                    (F64(l), I64(r)) => Ok(Bool(l < r as f64)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
+                Op::LTE => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(Bool(l <= r)),
+                    (F64(l), F64(r)) => Ok(Bool(l <= r)),
+                    (I64(l), F64(r)) => Ok(Bool((l as f64) <= r)),
+                    (F64(l), I64(r)) => Ok(Bool(l <= r as f64)),
+                    (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
+                },
             },
         }
     }
@@ -65,7 +245,9 @@ impl Evaluable for ExpressionType {
             ExpressionType::Variable(var) => v
                 .get(&var)
                 .context(format!("Variable Not Defined: {}", var))?
+                .clone()
                 .eval(v),
+            ExpressionType::Expr(e) => e.eval(v),
             ExpressionType::Vector(vec) => {
                 // empty vectors can't exist in the parser, i think
                 match &vec.first().unwrap() {
@@ -110,9 +292,9 @@ impl Evaluable for ExpressionType {
                         }
                         Ok(Primitive::StrVec(primitive_vec))
                     }
+                    _ => Err(RuntimeError::VecTypeError.into()),
                 }
             }
-            ExpressionType::Expr(e) => e.eval(v),
             ExpressionType::Block(_)
             | ExpressionType::Duration(_)
             | ExpressionType::Range(..)
