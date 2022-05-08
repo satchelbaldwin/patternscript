@@ -1,6 +1,6 @@
-use super::closure::Callback;
+use super::callback::Callback;
 use crate::interpreter::{EntityMap, PathMap, PatternMap};
-use crate::parser::parser::{Node, PatternData};
+use crate::parser::parser::Node;
 use cgmath::{Deg, Vector2, Vector3};
 use std::fmt;
 

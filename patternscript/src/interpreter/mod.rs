@@ -1,14 +1,18 @@
-pub mod closure;
+pub mod callback;
 pub mod entity;
+pub mod error;
+pub mod evaluate;
+pub mod primitive;
 mod utils;
 
 use super::parser::parser::*;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use entity::*;
 use std::collections::HashMap;
 use thiserror::Error;
 use utils::remove_sorted_indices;
 
+// todo: move IError to RuntimeError after refactor
 #[derive(Debug, Error)]
 pub enum IError {
     #[error("Parse of pattern did not result in head node.")]
