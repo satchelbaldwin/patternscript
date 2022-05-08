@@ -1,8 +1,7 @@
-use super::callback::Callback;
-use crate::interpreter::{EntityMap, PathMap, PatternMap};
-use crate::parser::parser::Node;
+use super::callback::{Callback, CallbackResult, EntityCallback, TimedCallback};
+use super::{EntityMap, PathMap, PatternMap};
+use crate::parser::parser::{ExpressionType, Node, Values};
 use cgmath::{Deg, Vector2, Vector3};
-use std::fmt;
 
 pub type PathFn = fn(u64, Vec<f64>) -> Vector2<f64>;
 
@@ -45,45 +44,6 @@ pub struct Entity {
     pub behavior: Behavior,
 }
 
-pub type Actions<'a> = Vec<Vec<TimedCallback<'a>>>;
-
-#[derive(Debug)]
-pub enum CallbackResult {
-    Delete,
-    Mutate,
-    AddEntities(Vec<Entity>),
-}
-// will fire on execution frame >= frame
-pub struct EntityCallback<'a>(
-    pub  Box<
-        dyn 'a + Fn(&mut ExecutionEnvironment, &PathMap, &PatternMap, &EntityMap) -> CallbackResult,
-    >,
-);
-
-#[derive(Debug)]
-pub struct TimedCallback<'a> {
-    pub func: EntityCallback<'a>,
-    pub frame: u32,
-}
-
-impl<'a> fmt::Debug for EntityCallback<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<function>")
-    }
-}
-
-impl<'a> TimedCallback<'a> {
-    pub fn new(
-        c: impl 'a + Fn(&mut ExecutionEnvironment, &PathMap, &PatternMap, &EntityMap) -> CallbackResult,
-        frame: u32,
-    ) -> Self {
-        TimedCallback {
-            func: EntityCallback(Box::new(c)),
-            frame,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct ExecutionEnvironment {
     pub elapsed: u32,
@@ -104,6 +64,22 @@ impl ExecutionEnvironment {
 }
 
 impl<'a> Entity {
+    pub fn new() -> Self {
+        Entity {
+            position: Vector2 { x: 0.0, y: 0.0 },
+            velocity: Vector2 { x: 0.0, y: 0.0 },
+            rotation: Deg(0),
+            lifetime: 240,
+            color: Vector3 { x: 255, y: 0, z: 0 },
+            hitbox: Hitbox {
+                size: Vector2 { x: 3, y: 3 },
+                offset: Vector2 { x: 0.0, y: 0.0 },
+                hitbox_type: HitboxType::Rectangle,
+            },
+            behavior: Behavior::Simple,
+        }
+    }
+
     pub fn compile_behavior(
         &self,
         paths: &PathMap,
@@ -111,11 +87,20 @@ impl<'a> Entity {
         ents: &EntityMap,
         fps: u16,
     ) -> Option<Vec<TimedCallback<'a>>> {
+        println!("behavior: ent");
         match &self.behavior {
             Behavior::Pattern(pd) => {
                 Some(Node::Pattern(patterns.get(pd)?.clone()).create(paths, patterns, ents, fps))
             }
             Behavior::Simple => None,
         }
+    }
+
+    pub fn from_values(values: &Values) -> Self {
+        let mut entity = Entity::new();
+        if let ExpressionType::String(e_type) = values.get("type").unwrap() {
+            // this should be fixed
+        }
+        entity
     }
 }

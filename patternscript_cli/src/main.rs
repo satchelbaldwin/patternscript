@@ -1,5 +1,5 @@
-use patternscript::interpreter::closure::*;
 use patternscript::interpreter::entity::{Entity, Hitbox};
+use patternscript::interpreter::evaluate::*;
 use patternscript::interpreter::*;
 use patternscript::parser::lexer::{Lexer, Token};
 use patternscript::parser::parser::*;
@@ -68,7 +68,9 @@ fn main() {
         };
 
         world.spawn_direct(&e);
-        world.step();
+        for i in 0..500 {
+            world.step();
+        }
 
         println!("{:?}", world);
     }

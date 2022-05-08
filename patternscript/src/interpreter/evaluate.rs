@@ -4,11 +4,11 @@ use super::*;
 use crate::parser::types::Op;
 use anyhow::{Context, Result};
 
-pub trait Evaluable {
+pub trait Evaluate {
     fn eval(self, v: &Values) -> Result<Primitive>;
 }
 
-impl Evaluable for ArithmeticExpression {
+impl Evaluate for ArithmeticExpression {
     fn eval(self, v: &Values) -> Result<Primitive> {
         use Primitive::*;
         match self {
@@ -129,7 +129,7 @@ impl Evaluable for ArithmeticExpression {
         }
     }
 }
-impl Evaluable for ExpressionType {
+impl Evaluate for ExpressionType {
     fn eval(self, v: &Values) -> Result<Primitive> {
         match self {
             ExpressionType::String(s) => Ok(Primitive::String(s)),
@@ -196,7 +196,7 @@ impl Evaluable for ExpressionType {
     }
 }
 
-impl Evaluable for Condition {
+impl Evaluate for Condition {
     fn eval(self, v: &Values) -> Result<Primitive> {
         use Primitive::Bool;
         match self {

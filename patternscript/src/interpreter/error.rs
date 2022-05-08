@@ -20,4 +20,6 @@ pub enum RuntimeError {
     OperatorTypeError(Op, Primitive, Primitive),
     #[error("Conditional didn't evaluate to boolean type")]
     CondNotBoolError,
+    #[error("Pattern needs iteration_type specified.")]
+    PatternIterationType,
 }

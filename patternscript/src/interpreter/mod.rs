@@ -7,6 +7,8 @@ mod utils;
 
 use super::parser::parser::*;
 use anyhow::Result;
+use callback::Actions;
+use callback::CallbackResult;
 use entity::*;
 use std::collections::HashMap;
 use thiserror::Error;
