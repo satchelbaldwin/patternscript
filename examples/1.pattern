@@ -20,7 +20,7 @@ pattern p2 = {
 
 pattern phase1 = {
      iteration_type = time;  // time instead of a cycle count
-     length = 6.0 seconds;           // time in seconds
+     length = 6.0 seconds;           // time in seconds or frames
      actions = {
           origin = entity_position + (0, 20);
 

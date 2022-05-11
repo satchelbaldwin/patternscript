@@ -168,34 +168,98 @@ impl<'a> Callback<'a> for Node {
                 println!("INNER VALS {:?}", inner_values);
                 println!("\n\n{:?}\n\n", pd.block.statements);
 
-                if let ExpressionType::String(st) = inner_values
-                    .get("iteration_type")
-                    .unwrap_or(&ExpressionType::String("blank".to_string()))
-                {
-                    match st.as_str() {
-                        "time" => {
-                            //todo: time
-                        }
-                        "cycles" => {
-                            //todo: cycles
-                        }
-                        _ => {
-                            //todo: iter once
+                //
+                let mut run_inner = |time: &mut u32,
+                                     values: Values,
+                                     paths: &PathMap,
+                                     patterns: &PatternMap,
+                                     ents: &EntityMap,
+                                     fps: u16,
+                                     stmts: Vec<Node>| {
+                    println!("this ran???");
+                    for statement in stmts {
+                        println!("\n\npattern statement: {:?} \n\n", statement);
+                        let mut r = statement.create_inner(
+                            time,
+                            values.clone(),
+                            paths,
+                            patterns,
+                            ents,
+                            fps,
+                        );
+                        if r.len() > 0 {
+                            result.append(&mut r);
                         }
                     }
-                }
-                for statement in pd.block.statements {
-                    println!("\n\npattern statement: {:?} \n\n", statement);
-                    let mut r = statement.create_inner(
-                        time,
-                        inner_values.clone(),
-                        paths,
-                        patterns,
-                        ents,
-                        fps,
-                    );
-                    if r.len() > 0 {
-                        result.append(&mut r);
+                };
+
+                // dispatch on iteration type for number of cycles through the behavior
+                if let ExpressionType::Variable(st) = inner_values
+                    .get("iteration_type")
+                    .unwrap_or(&ExpressionType::Variable("blank".to_string()))
+                {
+                    println!("IT_TYPE: {}", st);
+                    let default_time = ExpressionType::Duration(Box::new(WaitData::Frames(
+                        ExpressionType::Int(0),
+                    )));
+                    if let ExpressionType::Block(actions) = inner_values
+                        .get("actions")
+                        .unwrap_or(&ExpressionType::Block(Block::new()))
+                    {
+                        match st.as_str() {
+                            "time" => match inner_values.get("length").unwrap_or(&default_time) {
+                                ExpressionType::Duration(box WaitData::Frames(
+                                    ExpressionType::Int(i),
+                                )) => {
+                                    while *time < *i as u32 {
+                                        run_inner(
+                                            time,
+                                            values.clone(),
+                                            paths,
+                                            patterns,
+                                            ents,
+                                            fps,
+                                            actions.statements.clone(),
+                                        );
+                                    }
+                                }
+                                ExpressionType::Duration(box WaitData::Time(
+                                    ExpressionType::Float(f),
+                                )) => {
+                                    while *time < (*f * fps as f64) as u32 {
+                                        run_inner(
+                                            time,
+                                            values.clone(),
+                                            paths,
+                                            patterns,
+                                            ents,
+                                            fps,
+                                            actions.statements.clone(),
+                                        );
+                                    }
+                                }
+                                ExpressionType::Duration(box WaitData::Time(
+                                    ExpressionType::Int(i),
+                                )) => {
+                                    while *time < ((*i as u16) * fps) as u32 {
+                                        run_inner(
+                                            time,
+                                            values.clone(),
+                                            paths,
+                                            patterns,
+                                            ents,
+                                            fps,
+                                            actions.statements.clone(),
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            },
+                            "cycles" => {}
+                            _ => {
+                                //todo: iter once
+                            }
+                        }
                     }
                 }
             }

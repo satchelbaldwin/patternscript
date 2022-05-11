@@ -100,6 +100,9 @@ impl<'a> Interpreter<'a> {
             entity.compile_behavior(&self.paths, &self.patterns, &self.prefabs, self.fps)
         {
             self.actions.push(new_actions);
+        } else {
+            println!("entity made no further actions -- empty in array!");
+            self.actions.push(Vec::new());
         }
     }
 
@@ -123,6 +126,7 @@ impl<'a> Interpreter<'a> {
             for callback_index in 0..self.actions[i].len() {
                 let callback = &self.actions[i][callback_index];
                 if callback.frame >= self.entities[i].elapsed {
+                    println!("RUNNING CALLBACK ON FRAME {}", callback.frame);
                     removed_callback_indices.push(callback_index);
                     let result = (*callback.func.0)(
                         &mut self.entities[i],
