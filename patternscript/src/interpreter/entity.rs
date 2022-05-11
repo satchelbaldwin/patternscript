@@ -44,7 +44,7 @@ pub struct Entity {
     pub behavior: Behavior,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecutionEnvironment {
     pub elapsed: u32,
     pub duration: u32,
@@ -87,7 +87,6 @@ impl<'a> Entity {
         ents: &EntityMap,
         fps: u16,
     ) -> Option<Vec<TimedCallback<'a>>> {
-        println!("behavior: ent");
         match &self.behavior {
             Behavior::Pattern(pd) => {
                 Some(Node::Pattern(patterns.get(pd)?.clone()).create(paths, patterns, ents, fps))

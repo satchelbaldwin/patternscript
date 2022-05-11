@@ -8,7 +8,7 @@ use anyhow::Context;
 use itertools::Itertools;
 use std::fmt;
 
-pub type Actions<'a> = Vec<Vec<TimedCallback<'a>>>;
+pub type Actions<'a> = Vec<Option<Vec<TimedCallback<'a>>>>;
 
 #[derive(Debug)]
 pub enum CallbackResult {
@@ -115,7 +115,6 @@ impl<'a> Callback<'a> for Node {
                 // contains all combinations of inner for loop variables
                 let iterations: Vec<Vec<&i64>> =
                     var_ranges.iter().multi_cartesian_product().collect();
-                println!("{:?}", iterations);
                 // for each in-patternscript for loop statements body
                 for v in iterations {
                     let mut new_bindings: Values = HashMap::new();
@@ -127,7 +126,6 @@ impl<'a> Callback<'a> for Node {
                     // plus the existing scope
                     let mut all_bindings = values.clone();
                     all_bindings.extend(new_bindings);
-
                     // handle according to conditional inclusion/exclusion rules, then execute block
                     if let Ok(Primitive::Bool(b)) = fd.condition.clone().eval(&all_bindings) {
                         if b {
@@ -162,13 +160,9 @@ impl<'a> Callback<'a> for Node {
                 // todo: revisit grammar for this one
             }
             Node::Pattern(pd) => {
-                println!("Pat {:?}", pd);
                 let mut inner_values = values.clone();
                 inner_values.extend(pd.block.definitions);
-                println!("INNER VALS {:?}", inner_values);
-                println!("\n\n{:?}\n\n", pd.block.statements);
-
-                //
+                // inline-style repeated for loop runner
                 let mut run_inner = |time: &mut u32,
                                      values: Values,
                                      paths: &PathMap,
@@ -176,9 +170,7 @@ impl<'a> Callback<'a> for Node {
                                      ents: &EntityMap,
                                      fps: u16,
                                      stmts: Vec<Node>| {
-                    println!("this ran???");
                     for statement in stmts {
-                        println!("\n\npattern statement: {:?} \n\n", statement);
                         let mut r = statement.create_inner(
                             time,
                             values.clone(),
@@ -198,7 +190,6 @@ impl<'a> Callback<'a> for Node {
                     .get("iteration_type")
                     .unwrap_or(&ExpressionType::Variable("blank".to_string()))
                 {
-                    println!("IT_TYPE: {}", st);
                     let default_time = ExpressionType::Duration(Box::new(WaitData::Frames(
                         ExpressionType::Int(0),
                     )));
@@ -255,9 +246,37 @@ impl<'a> Callback<'a> for Node {
                                 }
                                 _ => {}
                             },
-                            "cycles" => {}
+                            "cycles" => {
+                                match inner_values
+                                    .get("length")
+                                    .unwrap_or(&ExpressionType::Int(1))
+                                {
+                                    ExpressionType::Int(i) => {
+                                        for _i in 0..*i {
+                                            run_inner(
+                                                time,
+                                                values.clone(),
+                                                paths,
+                                                patterns,
+                                                ents,
+                                                fps,
+                                                actions.statements.clone(),
+                                            );
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                             _ => {
-                                //todo: iter once
+                                run_inner(
+                                    time,
+                                    values.clone(),
+                                    paths,
+                                    patterns,
+                                    ents,
+                                    fps,
+                                    actions.statements.clone(),
+                                );
                             }
                         }
                     }
@@ -290,7 +309,10 @@ impl<'a> Callback<'a> for Node {
                         // wait negative seconds doesn't make sense//scary cast i64>u32
                         *time = *time + i as u32 * fps as u32;
                     }
-                    ExpressionType::Float(f) => *time = *time + (f * fps as f64).floor() as u32,
+                    ExpressionType::Float(f) => {
+                        println!("wait? {} ", (f * fps as f64).floor() as u32);
+                        *time = *time + (f * fps as f64).floor() as u32;
+                    }
                     _ => {
                         panic!("this should be caught by the parser, if you see this i made a regression, please report a bug")
                     }
@@ -307,7 +329,6 @@ impl<'a> Callback<'a> for Node {
         ents: &EntityMap,
         fps: u16,
     ) -> Vec<TimedCallback<'a>> {
-        println!("create");
         let mut time: u32 = 0;
         self.create_inner(&mut time, HashMap::new(), paths, patterns, ents, fps)
     }

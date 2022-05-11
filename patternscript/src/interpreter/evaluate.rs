@@ -94,6 +94,10 @@ impl Evaluate for ArithmeticExpression {
                     (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
                 },
                 Op::Test => match (lhs.eval(v)?, rhs.eval(v)?) {
+                    (I64(l), I64(r)) => Ok(Bool(l == r)),
+                    (F64(l), F64(r)) => Ok(Bool(l == r)),
+                    (I64(l), F64(r)) => Ok(Bool(l as f64 == r)),
+                    (F64(l), I64(r)) => Ok(Bool(l == r as f64)),
                     (Bool(l), Bool(r)) => Ok(Bool(l == r)),
                     (l, r) => Err(RuntimeError::OperatorTypeError(op, l, r).into()),
                 },

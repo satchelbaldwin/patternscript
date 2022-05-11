@@ -12,7 +12,7 @@ use callback::CallbackResult;
 use entity::*;
 use std::collections::HashMap;
 use thiserror::Error;
-use utils::remove_sorted_indices;
+use utils::{remove_sorted_indices, swap_remove_all};
 
 // todo: move IError to RuntimeError after refactor
 #[derive(Debug, Error)]
@@ -99,10 +99,10 @@ impl<'a> Interpreter<'a> {
         if let Some(new_actions) =
             entity.compile_behavior(&self.paths, &self.patterns, &self.prefabs, self.fps)
         {
-            self.actions.push(new_actions);
+            self.actions.push(Some(new_actions));
         } else {
             println!("entity made no further actions -- empty in array!");
-            self.actions.push(Vec::new());
+            self.actions.push(None);
         }
     }
 
@@ -113,6 +113,8 @@ impl<'a> Interpreter<'a> {
 
     pub fn step(&mut self) {
         // collect all new emplacements per frame
+        println!("WORLD STEP\n---------");
+
         let mut pooled_new_actions: Actions = Vec::new();
         let mut pooled_new_entities: Vec<ExecutionEnvironment> = Vec::new();
         let mut batched_deletions: Vec<usize> = Vec::new();
@@ -121,44 +123,60 @@ impl<'a> Interpreter<'a> {
         for i in 0..self.entities.len() {}
 
         // step behavior of each adding new ents to pool: spawns, subpatterns
+        println!(
+            "entities and actions: {} {}",
+            self.entities.len(),
+            self.actions.len(),
+        );
         for i in 0..self.entities.len() {
             let mut removed_callback_indices: Vec<usize> = Vec::new();
-            for callback_index in 0..self.actions[i].len() {
-                let callback = &self.actions[i][callback_index];
-                if callback.frame >= self.entities[i].elapsed {
-                    println!("RUNNING CALLBACK ON FRAME {}", callback.frame);
-                    removed_callback_indices.push(callback_index);
-                    let result = (*callback.func.0)(
-                        &mut self.entities[i],
-                        &self.paths,
-                        &self.patterns,
-                        &self.prefabs,
-                    );
-                    match result {
-                        CallbackResult::AddEntities(ents) => {
-                            for ent in &ents {
-                                pooled_new_entities.push(ExecutionEnvironment::new(ent));
-                                if let Some(new_actions) = ent.compile_behavior(
-                                    &self.paths,
-                                    &self.patterns,
-                                    &self.prefabs,
-                                    self.fps,
-                                ) {
-                                    pooled_new_actions.push(new_actions);
+            match &mut self.actions[i] {
+                Some(actions) => {
+                    for callback_index in 0..actions.len() {
+                        let callback = &actions[callback_index];
+                        if callback.frame <= self.entities[i].elapsed {
+                            println!("running callback for ent {} on frame {}", i, callback.frame);
+                            removed_callback_indices.push(callback_index);
+                            let result = (*callback.func.0)(
+                                &mut self.entities[i],
+                                &self.paths,
+                                &self.patterns,
+                                &self.prefabs,
+                            );
+                            match result {
+                                CallbackResult::AddEntities(ents) => {
+                                    println!("callback returned entities: {}", ents.len());
+                                    for ent in &ents {
+                                        println!("  adding ent: {:?}\n--", ent);
+                                        pooled_new_entities.push(ExecutionEnvironment::new(ent));
+                                        let new_actions = ent.compile_behavior(
+                                            &self.paths,
+                                            &self.patterns,
+                                            &self.prefabs,
+                                            self.fps,
+                                        );
+                                        pooled_new_actions.push(new_actions);
+                                    }
                                 }
+                                CallbackResult::Delete => batched_deletions.push(i),
+                                CallbackResult::Mutate => {}
                             }
                         }
-                        CallbackResult::Delete => batched_deletions.push(i),
-                        CallbackResult::Mutate => {}
                     }
+                    // remove singular entity's spent callbacks and advance its lifetime
+                    println!("callbacks to remove: {:?}", removed_callback_indices);
+                    swap_remove_all(actions, &removed_callback_indices);
+                    self.entities[i].elapsed += 1;
                 }
+                None => {}
             }
-
-            self.entities[i].elapsed += 1;
         }
-        // sweep the marked dead entities
-        remove_sorted_indices(&mut self.entities, batched_deletions.clone());
-        remove_sorted_indices(&mut self.actions, batched_deletions);
+        // sweep the marked dead entities -- a dead entity can have no callbacks
+        println!("batched deletions: {:?}", batched_deletions);
+        println!("batched additions: {:?}", pooled_new_entities);
+        println!("batched additions: {:?}", pooled_new_actions);
+        swap_remove_all(&mut self.entities, &batched_deletions);
+        swap_remove_all(&mut self.actions, &batched_deletions);
         // add pool to current
         self.entities.append(&mut pooled_new_entities);
         self.actions.append(&mut pooled_new_actions);

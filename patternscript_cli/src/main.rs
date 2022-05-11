@@ -68,7 +68,8 @@ fn main() {
         };
 
         world.spawn_direct(&e);
-        for i in 0..500 {
+        for i in 0..1000 {
+            print!("{} ", i);
             world.step();
         }
 
