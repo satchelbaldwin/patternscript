@@ -1,10 +1,9 @@
-use crate::interpreter::error::RuntimeError;
+//use crate::interpreter::error::RuntimeError;
 
 use super::entity::*;
 use super::evaluate::Evaluate;
 use super::primitive::*;
 use super::*;
-use anyhow::Context;
 use itertools::Itertools;
 use std::fmt;
 
@@ -68,6 +67,7 @@ pub trait Callback<'a> {
         patterns: &PatternMap,
         ents: &EntityMap,
         bullets: &BulletMap,
+        globals: &Values,
         fps: u16,
     ) -> Vec<TimedCallback<'a>>;
     fn create_inner(
@@ -78,11 +78,33 @@ pub trait Callback<'a> {
         patterns: &PatternMap,
         ents: &EntityMap,
         bullets: &BulletMap,
+        globals: &Values,
         fps: u16,
     ) -> Vec<TimedCallback<'a>>;
 }
 
 impl<'a> Callback<'a> for Node {
+    fn create(
+        self,
+        paths: &PathMap,
+        patterns: &PatternMap,
+        ents: &EntityMap,
+        bullets: &BulletMap,
+        globals: &Values,
+        fps: u16,
+    ) -> Vec<TimedCallback<'a>> {
+        let mut time: u32 = 0;
+        self.create_inner(
+            &mut time,
+            HashMap::new(),
+            paths,
+            patterns,
+            ents,
+            bullets,
+            globals,
+            fps,
+        )
+    }
     fn create_inner(
         self,
         time: &mut u32,
@@ -91,6 +113,7 @@ impl<'a> Callback<'a> for Node {
         patterns: &PatternMap,
         ents: &EntityMap,
         bullets: &BulletMap,
+        globals: &Values,
         fps: u16,
     ) -> Vec<TimedCallback<'a>> {
         let mut result: Vec<TimedCallback<'a>> = Vec::new();
@@ -160,6 +183,7 @@ impl<'a> Callback<'a> for Node {
                                     patterns,
                                     ents,
                                     bullets,
+                                    globals,
                                     fps,
                                 );
                                 if rvec.len() > 0 {
@@ -196,6 +220,7 @@ impl<'a> Callback<'a> for Node {
                             patterns,
                             ents,
                             bullets,
+                            globals,
                             fps,
                         );
                         if r.len() > 0 {
@@ -302,11 +327,18 @@ impl<'a> Callback<'a> for Node {
                 }
             }
             Node::Spawn(sd) => {
+                let globals = globals.clone();
                 let tc = TimedCallback::new(
-                    move |ex, path, pat, ent, bul| {
+                    move |_ex, path, _pat, _ent, bul| {
                         let mut ents: Vec<Entity> = Vec::new();
                         let defs = sd.definitions.clone();
-                        ents.push(Entity::from_values(&defs, bul));
+                        ents.push(Entity::from_values(
+                            &defs,
+                            path,
+                            bul,
+                            globals.clone(),
+                            Some(values.clone()),
+                        ));
                         CallbackResult::AddEntities(ents.clone())
                     },
                     *time,
@@ -338,24 +370,5 @@ impl<'a> Callback<'a> for Node {
         }
 
         result
-    }
-    fn create(
-        self,
-        paths: &PathMap,
-        patterns: &PatternMap,
-        ents: &EntityMap,
-        bullets: &BulletMap,
-        fps: u16,
-    ) -> Vec<TimedCallback<'a>> {
-        let mut time: u32 = 0;
-        self.create_inner(
-            &mut time,
-            HashMap::new(),
-            paths,
-            patterns,
-            ents,
-            bullets,
-            fps,
-        )
     }
 }

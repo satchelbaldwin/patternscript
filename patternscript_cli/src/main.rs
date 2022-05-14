@@ -68,6 +68,7 @@ fn main() {
             behavior: entity::Behavior::Pattern(pattern_name.clone()),
             position_fn: None,
             velocity_fn: None,
+            instance_vars: None,
         };
 
         world.spawn_direct(&e);

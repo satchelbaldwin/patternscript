@@ -1,13 +1,15 @@
-use super::callback::{Callback, CallbackResult, EntityCallback, TimedCallback};
+use std::collections::HashMap;
+
+use super::callback::{Callback, TimedCallback};
 use super::evaluate::Evaluate;
 use super::primitive::Primitive;
 use super::{BulletMap, EntityMap, PathMap, PatternMap};
-use crate::parser::parser::{ExpressionType, Node, Values};
+use crate::parser::parser::{ArithmeticExpression, ExpressionType, Node, UnaryOperator, Values};
 use cgmath::{Angle, Deg, Vector2, Vector3};
 
 #[derive(Clone, Debug)]
 pub enum VelocityType {
-    Simple,
+    Simple(Vector2<f64>),
     Acceleration(Vector2<f64>),
     Path(ExpressionType),
 }
@@ -39,12 +41,16 @@ pub struct Entity {
     pub rotation: Deg<f32>,
     pub speed: Option<f64>,
     pub lifetime: u32,
-    pub position_fn: Option<String>,
-    pub velocity_fn: Option<String>,
+    // path funcs are represented as values, args are listed in the values,
+    // x and y are given as things that can be evaled by their own scope
+    pub position_fn: Option<Values>,
+    pub velocity_fn: Option<Values>,
 
     pub color: Vector3<u8>,
     pub hitbox: Hitbox,
     pub behavior: Behavior,
+
+    pub instance_vars: Option<Values>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +89,7 @@ impl<'a> Entity {
             behavior: Behavior::Simple,
             position_fn: None,
             velocity_fn: None,
+            instance_vars: None,
         }
     }
 
@@ -92,12 +99,13 @@ impl<'a> Entity {
         patterns: &PatternMap,
         ents: &EntityMap,
         bullets: &BulletMap,
+        globals: Values,
         fps: u16,
     ) -> Option<Vec<TimedCallback<'a>>> {
         match &self.behavior {
             Behavior::Pattern(pd) => Some(
                 Node::Pattern(patterns.get(pd)?.clone())
-                    .create(paths, patterns, ents, bullets, fps),
+                    .create(paths, patterns, ents, bullets, &globals, fps),
             ),
             Behavior::Simple => None,
         }
@@ -125,11 +133,70 @@ impl<'a> Entity {
         }
     }
 
-    pub fn from_values(values: &Values, bullets: &BulletMap) -> Self {
+    pub fn align_function_args(arg_list: &ExpressionType, arg_vals: &ExpressionType) -> Values {
+        // precondition:
+        //   arg_list and arg_vals are
+        //   arg_list.len() == arg_vals.len()
+        // create values from list of arguments and their respective values
+        // note:
+        //   for paths this will make an infinitely recursive eval on the definitions: t -> t, this is
+        //   replaced by the time at runtime
+        let mut vals: Values = HashMap::new();
+        if let ExpressionType::Vector(arg_list) = arg_list {
+            if let ExpressionType::Vector(arg_vals) = arg_vals {
+                for i in 0..arg_list.len() {
+                    if let ExpressionType::Variable(lhs) = &arg_list[i] {
+                        vals.insert(lhs.clone(), arg_vals[i].clone());
+                    }
+                }
+            }
+        }
+        vals
+    }
+
+    /// Constructs a new `Entity`, overriding the defaults.
+    ///
+    /// # Examples
+    ///
+    /// ```pattern
+    /// bullet mid_sized = {
+    ///      sprite = "gameasset";
+    ///      hitbox = (4, 4);
+    ///      shape = "rectangle";
+    ///      color = (255, 255, 0);
+    ///      lifetime = 400;
+    /// }
+    ///
+    /// ...
+    ///
+    /// (within a block)
+    /// spawn {
+    ///     type = mid_sized;
+    ///     position = origin;
+    ///     rotation = angle;
+    ///     speed = 200;
+    ///     lifetime = 800;
+    /// }
+    /// ```
+    ///
+    /// will construct an `Entity` first from the default base, then replace the values
+    /// with that of the mid_sized bullet definition. After that, the newest definitions
+    /// within the spawning block will be used -- that is, the end lifetime will be 800.
+    pub fn from_values(
+        values: &Values,
+        paths: &PathMap,
+        bullets: &BulletMap,
+        globals: Values,
+        instance_vals: Option<Values>,
+    ) -> Self {
         let mut entity = Entity::new();
 
         let mut values = values.clone();
         let original_vals = values.clone();
+        entity.instance_vars = instance_vals.clone();
+        if let Some(ref mut iv) = entity.instance_vars {
+            iv.extend(globals.clone());
+        }
 
         // bullet prefab data
         if let Some(ExpressionType::Variable(e_type)) = values.get("type") {
@@ -149,23 +216,36 @@ impl<'a> Entity {
             }
         }
 
-        println!("{:?}", values);
-
         // spawn data
 
         if let Some(lifetime) = values.get("lifetime") {
-            println!("Lifetime");
             entity.lifetime = match lifetime.clone().eval(&values) {
                 Ok(Primitive::I64(i)) => i as u32,
                 Ok(Primitive::F64(f)) => f as u32,
                 _ => 600,
             }
         }
-        if let Some(ExpressionType::Variable(path_fn)) = values.get("position_fn") {
-            entity.position_fn = Some(path_fn.clone());
+        if let Some(ExpressionType::Expr(ArithmeticExpression::Unary(
+            UnaryOperator::FunctionCall(path_fn_name),
+            arguments,
+        ))) = values.get("position_fn")
+        {
+            if let Some(path) = paths.get(path_fn_name) {
+                let mut path_vals = Entity::align_function_args(&path.arguments.clone(), arguments);
+                path_vals.extend(path.definitions.clone());
+                entity.position_fn = Some(path_vals);
+            }
         }
-        if let Some(ExpressionType::Variable(path_fn)) = values.get("velocity_fn") {
-            entity.velocity_fn = Some(path_fn.clone());
+        if let Some(ExpressionType::Expr(ArithmeticExpression::Unary(
+            UnaryOperator::FunctionCall(path_fn_name),
+            arguments,
+        ))) = values.get("velocity_fn")
+        {
+            if let Some(path) = paths.get(path_fn_name) {
+                let mut path_vals = Entity::align_function_args(&path.arguments.clone(), arguments);
+                path_vals.extend(path.definitions.clone());
+                entity.velocity_fn = Some(path_vals);
+            }
         }
         if let Some(position) = values.get("position") {
             entity.position = match position.clone().eval(&values) {
@@ -181,8 +261,8 @@ impl<'a> Entity {
                 _ => Vector2::new(0.0, 0.0),
             }
         }
-        if let Some(direction) = values.get("direction") {
-            entity.rotation = match direction.clone().eval(&values) {
+        if let Some(rotation) = values.get("rotation") {
+            entity.rotation = match rotation.clone().eval(&values) {
                 Ok(Primitive::I64(i)) => Deg(i as f32).normalize(),
                 Ok(Primitive::F64(f)) => Deg(f as f32).normalize(),
                 _ => Deg(0.0),
@@ -195,9 +275,6 @@ impl<'a> Entity {
                 _ => Some(10.0),
             }
         }
-
-        println!("{:?}", entity);
-
         entity
     }
 }

@@ -3,6 +3,7 @@ pub mod entity;
 pub mod error;
 pub mod evaluate;
 pub mod primitive;
+pub mod ps_funcs;
 mod utils;
 
 use self::evaluate::Evaluate;
@@ -10,14 +11,12 @@ use self::primitive::Primitive;
 
 use super::parser::parser::*;
 use anyhow::Result;
-use callback::Actions;
-use callback::CallbackResult;
-use cgmath::Angle;
-use cgmath::Vector2;
+use callback::{Actions, CallbackResult};
+use cgmath::{Angle, Vector2};
 use entity::*;
 use std::collections::HashMap;
 use thiserror::Error;
-use utils::{remove_sorted_indices, swap_remove_all};
+use utils::swap_remove_all;
 
 // todo: move IError to RuntimeError after refactor
 #[derive(Debug, Error)]
@@ -98,11 +97,13 @@ impl<'a> Interpreter<'a> {
 
     pub fn spawn_direct(&mut self, entity: &Entity) {
         self.entities.push(ExecutionEnvironment::new(entity));
+        let globals = Interpreter::create_globals(entity.position);
         if let Some(new_actions) = entity.compile_behavior(
             &self.paths,
             &self.patterns,
             &self.prefabs,
             &self.bullets,
+            globals,
             self.fps,
         ) {
             self.actions.push(Some(new_actions));
@@ -117,14 +118,10 @@ impl<'a> Interpreter<'a> {
             .push(ExecutionEnvironment::new(&self.prefabs[&name]));
     }
 
-    pub fn move_entities(exec: &mut Vec<ExecutionEnvironment>, paths: &PathMap, fps: u16) {
-        let get_primitive = |var: String, path: &PathData, vals: &Values| {
-            path.definitions
-                .get(&var)
-                .unwrap()
-                .clone()
-                .eval(&vals)
-                .unwrap()
+    pub fn move_entities(exec: &mut Vec<ExecutionEnvironment>, fps: u16) {
+        let get_primitive = |var: String, vals: &Values| -> Primitive {
+            println!("{:?}", vals);
+            vals.get(&var).unwrap().clone().eval(&vals).unwrap()
         };
         let extract_numeric = |primitive: Primitive| -> f64 {
             return match primitive {
@@ -140,17 +137,33 @@ impl<'a> Interpreter<'a> {
             //   velocity_fn exists (set velocity, resolve position per frame)
             //   speed/rotation exist, resolve velocity, then resolve position from velocity
             //   resolve position from velocity
-            let mut vals: Values = HashMap::new();
+
+            // contains patternscript globals to be added in
+            //   such as the entity position
+
+            //todo: instance overwrites locals, shouldn't
+            let mut vals: Values = environment
+                .entity
+                .instance_vars
+                .clone()
+                .unwrap_or(HashMap::new());
+            // time
             vals.insert(
                 "t".to_string(),
                 ExpressionType::Int(environment.elapsed as i64),
             );
+            // towards player
+            vals.insert(
+                "towards_player".to_string(),
+                Interpreter::angle_towards_player(),
+            );
+
             if let Some(pos_fn) = &environment.entity.position_fn {
-                if let Some(path) = paths.get(pos_fn) {
-                    let x = extract_numeric(get_primitive("x".to_string(), path, &vals));
-                    let y = extract_numeric(get_primitive("y".to_string(), path, &vals));
-                    environment.entity.position = Vector2::new(x, y);
-                }
+                let mut fn_with_globals = pos_fn.clone();
+                fn_with_globals.extend(vals.clone());
+                let x = extract_numeric(get_primitive("x".to_string(), &fn_with_globals));
+                let y = extract_numeric(get_primitive("y".to_string(), &fn_with_globals));
+                environment.entity.position = Vector2::new(x, y);
             } else {
                 if let Some(speed) = &environment.entity.speed {
                     let x = *speed * environment.entity.rotation.cos() as f64;
@@ -158,17 +171,43 @@ impl<'a> Interpreter<'a> {
                     environment.entity.velocity = Vector2::new(x, y);
                 }
                 if let Some(vel_fn) = &environment.entity.velocity_fn {
-                    if let Some(path) = paths.get(vel_fn) {
-                        let x = extract_numeric(get_primitive("x".to_string(), path, &vals));
-                        let y = extract_numeric(get_primitive("y".to_string(), path, &vals));
-                        environment.entity.velocity = Vector2::new(x, y);
-                    }
+                    let mut fn_with_globals = vel_fn.clone();
+                    fn_with_globals.extend(vals.clone());
+                    let x = extract_numeric(get_primitive("x".to_string(), &fn_with_globals));
+                    let y = extract_numeric(get_primitive("y".to_string(), &fn_with_globals));
+                    environment.entity.velocity = Vector2::new(x, y);
                 }
 
                 environment.entity.position += environment.entity.velocity * (1.0 / fps as f64);
             }
             environment.elapsed += 1;
         }
+    }
+
+    fn angle_towards_player() -> ExpressionType {
+        // todo: no player
+        ExpressionType::Float(17.0)
+    }
+
+    fn entity_pos_as_expr(entity_position: Vector2<f64>) -> ExpressionType {
+        ExpressionType::Vector(vec![
+            ExpressionType::Float(entity_position[0]),
+            ExpressionType::Float(entity_position[1]),
+        ])
+    }
+
+    // create spawn-time globals -- these will not be accurate for per frame movements
+    pub fn create_globals(entity_position: Vector2<f64>) -> Values {
+        let mut globals: Values = HashMap::new();
+        globals.insert(
+            "towards_player".to_string(),
+            Interpreter::angle_towards_player(),
+        );
+        globals.insert(
+            "entity_position".to_string(),
+            Interpreter::entity_pos_as_expr(entity_position),
+        );
+        globals
     }
 
     pub fn step(&mut self) {
@@ -180,8 +219,7 @@ impl<'a> Interpreter<'a> {
         let mut batched_deletions: Vec<usize> = Vec::new();
 
         // move current entity according to velocity rules
-
-        Interpreter::move_entities(&mut self.entities, &mut self.paths, self.fps);
+        Interpreter::move_entities(&mut self.entities, self.fps);
 
         // step behavior of each adding new ents to pool: spawns, subpatterns
         println!(
@@ -215,12 +253,16 @@ impl<'a> Interpreter<'a> {
                                     println!("callback returned entities: {}", ents.len());
                                     for ent in &ents {
                                         println!("  adding ent: {:?}\n--", ent);
+                                        let globals = Interpreter::create_globals(
+                                            self.entities[i].entity.position,
+                                        );
                                         pooled_new_entities.push(ExecutionEnvironment::new(ent));
                                         let new_actions = ent.compile_behavior(
                                             &self.paths,
                                             &self.patterns,
                                             &self.prefabs,
                                             &self.bullets,
+                                            globals,
                                             self.fps,
                                         );
                                         pooled_new_actions.push(new_actions);

@@ -1,5 +1,6 @@
 use super::error::*;
 use super::primitive::*;
+use super::ps_funcs;
 use super::*;
 use crate::parser::types::Op;
 use anyhow::{Context, Result};
@@ -16,8 +17,7 @@ impl Evaluate for ArithmeticExpression {
                 UnaryOperator::FunctionCall(ref fn_name) => {
                     // todo: defining builtin funcs should be broken into their own file
                     // todo: all functions return 0.0f
-                    println!("LIST\n  {}\n  {:?}\n  {:?}", fn_name.clone(), op, val);
-                    Ok(F64(0.0))
+                    ps_funcs::dispatch_func(fn_name.clone(), v, val)
                 }
                 UnaryOperator::Negate => match (*val).eval(v)? {
                     F64(f) => Ok(F64(-1.0 * f)),
@@ -146,6 +146,7 @@ impl Evaluate for ExpressionType {
                 .clone()
                 .eval(v),
             ExpressionType::Expr(e) => e.eval(v),
+            // TODO: refactor this? would love to specialize it just on some types and not all
             ExpressionType::Vector(vec) => {
                 // empty vectors can't exist in the parser, i think
                 match &vec.first().unwrap() {
@@ -154,12 +155,8 @@ impl Evaluate for ExpressionType {
                     ExpressionType::Int(_i) => {
                         let mut primitive_vec: Vec<i64> = Vec::new();
                         for element in vec {
-                            let inner = element.eval(v)?;
-                            match inner {
-                                Primitive::I64(i) => {
-                                    primitive_vec.push(i);
-                                }
-                                _ => {}
+                            if let Primitive::I64(inner) = element.eval(v)? {
+                                primitive_vec.push(inner);
                             }
                         }
                         Ok(Primitive::IntVec(primitive_vec))
@@ -167,12 +164,8 @@ impl Evaluate for ExpressionType {
                     ExpressionType::Float(_f) => {
                         let mut primitive_vec: Vec<f64> = Vec::new();
                         for element in vec {
-                            let inner = element.eval(v)?;
-                            match inner {
-                                Primitive::F64(f) => {
-                                    primitive_vec.push(f);
-                                }
-                                _ => {}
+                            if let Primitive::F64(inner) = element.eval(v)? {
+                                primitive_vec.push(inner);
                             }
                         }
                         Ok(Primitive::FloatVec(primitive_vec))
@@ -180,16 +173,34 @@ impl Evaluate for ExpressionType {
                     ExpressionType::String(_s) => {
                         let mut primitive_vec: Vec<String> = Vec::new();
                         for element in vec {
-                            let inner = element.eval(v)?;
-                            match inner {
-                                Primitive::String(s) => {
-                                    primitive_vec.push(s);
-                                }
-                                _ => {}
+                            if let Primitive::String(inner) = element.eval(v)? {
+                                primitive_vec.push(inner);
                             }
                         }
+
                         Ok(Primitive::StrVec(primitive_vec))
                     }
+                    ExpressionType::Expr(e) => match e.clone().eval(v)? {
+                        Primitive::I64(_i) => {
+                            let mut primitive_vec: Vec<i64> = Vec::new();
+                            for element in vec {
+                                if let Primitive::I64(inner) = element.eval(v)? {
+                                    primitive_vec.push(inner);
+                                }
+                            }
+                            Ok(Primitive::IntVec(primitive_vec))
+                        }
+                        Primitive::F64(_f) => {
+                            let mut primitive_vec: Vec<f64> = Vec::new();
+                            for element in vec {
+                                if let Primitive::F64(inner) = element.eval(v)? {
+                                    primitive_vec.push(inner);
+                                }
+                            }
+                            Ok(Primitive::FloatVec(primitive_vec))
+                        }
+                        _ => Err(RuntimeError::VecTypeError.into()),
+                    },
                     _ => Err(RuntimeError::VecTypeError.into()),
                 }
             }
