@@ -56,8 +56,9 @@ fn main() {
         let e = Entity {
             position: Vector2 { x: 20.0, y: 20.0 },
             velocity: Vector2 { x: 0.0, y: 20.0 },
-            rotation: Deg(0),
-            lifetime: 240,
+            rotation: Deg(0.0),
+            speed: Some(20.0),
+            lifetime: 600,
             color: Vector3 { x: 255, y: 0, z: 0 },
             hitbox: Hitbox {
                 size: Vector2 { x: 8, y: 8 },
@@ -65,6 +66,8 @@ fn main() {
                 hitbox_type: entity::HitboxType::Rectangle,
             },
             behavior: entity::Behavior::Pattern(pattern_name.clone()),
+            position_fn: None,
+            velocity_fn: None,
         };
 
         world.spawn_direct(&e);

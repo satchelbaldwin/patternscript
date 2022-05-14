@@ -3,6 +3,7 @@ bullet mid_sized = {
      hitbox = (4, 4);
      shape = "rectangle";
      color = (255, 255, 0);
+     lifetime = 400;
 }
 
 path downward_s_curve(t, speed, offset) = {
@@ -21,8 +22,8 @@ pattern phase1 = {
                spawn {
                     type = mid_sized;
                     position = origin;
-                    direction = angle + n * 20;        // should handle precedence correctly here
-                    speed = 200;
+                    rotation = angle + n * 20;        // should handle precedence correctly here
+                    speed = 200 + 5;
                }
                wait 4 frames;
           }
@@ -32,6 +33,7 @@ pattern phase1 = {
                x = 1;
                spawn {
                     type = mid_sized;
+                    lifetime = 800;
                     position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))); 
                }
           }

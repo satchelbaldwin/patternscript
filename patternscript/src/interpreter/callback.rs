@@ -19,7 +19,14 @@ pub enum CallbackResult {
 // will fire on execution frame >= frame
 pub struct EntityCallback<'a>(
     pub  Box<
-        dyn 'a + Fn(&mut ExecutionEnvironment, &PathMap, &PatternMap, &EntityMap) -> CallbackResult,
+        dyn 'a
+            + Fn(
+                &mut ExecutionEnvironment,
+                &PathMap,
+                &PatternMap,
+                &EntityMap,
+                &BulletMap,
+            ) -> CallbackResult,
     >,
 );
 
@@ -31,7 +38,14 @@ pub struct TimedCallback<'a> {
 
 impl<'a> TimedCallback<'a> {
     pub fn new(
-        c: impl 'a + Fn(&mut ExecutionEnvironment, &PathMap, &PatternMap, &EntityMap) -> CallbackResult,
+        c: impl 'a
+            + Fn(
+                &mut ExecutionEnvironment,
+                &PathMap,
+                &PatternMap,
+                &EntityMap,
+                &BulletMap,
+            ) -> CallbackResult,
         frame: u32,
     ) -> Self {
         TimedCallback {
@@ -53,6 +67,7 @@ pub trait Callback<'a> {
         paths: &PathMap,
         patterns: &PatternMap,
         ents: &EntityMap,
+        bullets: &BulletMap,
         fps: u16,
     ) -> Vec<TimedCallback<'a>>;
     fn create_inner(
@@ -62,6 +77,7 @@ pub trait Callback<'a> {
         paths: &PathMap,
         patterns: &PatternMap,
         ents: &EntityMap,
+        bullets: &BulletMap,
         fps: u16,
     ) -> Vec<TimedCallback<'a>>;
 }
@@ -74,6 +90,7 @@ impl<'a> Callback<'a> for Node {
         paths: &PathMap,
         patterns: &PatternMap,
         ents: &EntityMap,
+        bullets: &BulletMap,
         fps: u16,
     ) -> Vec<TimedCallback<'a>> {
         let mut result: Vec<TimedCallback<'a>> = Vec::new();
@@ -142,6 +159,7 @@ impl<'a> Callback<'a> for Node {
                                     paths,
                                     patterns,
                                     ents,
+                                    bullets,
                                     fps,
                                 );
                                 if rvec.len() > 0 {
@@ -177,6 +195,7 @@ impl<'a> Callback<'a> for Node {
                             paths,
                             patterns,
                             ents,
+                            bullets,
                             fps,
                         );
                         if r.len() > 0 {
@@ -283,14 +302,13 @@ impl<'a> Callback<'a> for Node {
                 }
             }
             Node::Spawn(sd) => {
-                // this is the one that creates the callbacks -- that is, messages back to state when ran on x time
-
-                // todo: this is ALL placeholder
-                let e = Entity::from_values(&sd.definitions);
-                let mut ents: Vec<Entity> = Vec::new();
-                ents.push(e);
                 let tc = TimedCallback::new(
-                    move |ex, path, pat, ent| CallbackResult::AddEntities(ents.clone()),
+                    move |ex, path, pat, ent, bul| {
+                        let mut ents: Vec<Entity> = Vec::new();
+                        let defs = sd.definitions.clone();
+                        ents.push(Entity::from_values(&defs, bul));
+                        CallbackResult::AddEntities(ents.clone())
+                    },
                     *time,
                 );
                 result.push(tc)
@@ -310,7 +328,6 @@ impl<'a> Callback<'a> for Node {
                         *time = *time + i as u32 * fps as u32;
                     }
                     ExpressionType::Float(f) => {
-                        println!("wait? {} ", (f * fps as f64).floor() as u32);
                         *time = *time + (f * fps as f64).floor() as u32;
                     }
                     _ => {
@@ -327,9 +344,18 @@ impl<'a> Callback<'a> for Node {
         paths: &PathMap,
         patterns: &PatternMap,
         ents: &EntityMap,
+        bullets: &BulletMap,
         fps: u16,
     ) -> Vec<TimedCallback<'a>> {
         let mut time: u32 = 0;
-        self.create_inner(&mut time, HashMap::new(), paths, patterns, ents, fps)
+        self.create_inner(
+            &mut time,
+            HashMap::new(),
+            paths,
+            patterns,
+            ents,
+            bullets,
+            fps,
+        )
     }
 }

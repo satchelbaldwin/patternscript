@@ -13,9 +13,10 @@ impl Evaluate for ArithmeticExpression {
         use Primitive::*;
         match self {
             ArithmeticExpression::Unary(op, val) => match op {
-                UnaryOperator::FunctionCall(fn_name) => {
+                UnaryOperator::FunctionCall(ref fn_name) => {
                     // todo: defining builtin funcs should be broken into their own file
                     // todo: all functions return 0.0f
+                    println!("LIST\n  {}\n  {:?}\n  {:?}", fn_name.clone(), op, val);
                     Ok(F64(0.0))
                 }
                 UnaryOperator::Negate => match (*val).eval(v)? {

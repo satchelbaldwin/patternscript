@@ -5,10 +5,15 @@ pub mod evaluate;
 pub mod primitive;
 mod utils;
 
+use self::evaluate::Evaluate;
+use self::primitive::Primitive;
+
 use super::parser::parser::*;
 use anyhow::Result;
 use callback::Actions;
 use callback::CallbackResult;
+use cgmath::Angle;
+use cgmath::Vector2;
 use entity::*;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -21,7 +26,7 @@ pub enum IError {
     FromParse,
 }
 
-type PathMap = HashMap<String, PathFn>;
+type PathMap = HashMap<String, PathData>;
 type EntityMap = HashMap<String, Entity>;
 type PatternMap = HashMap<String, PatternData>;
 type BulletMap = HashMap<String, BulletData>;
@@ -75,11 +80,8 @@ impl<'a> Interpreter<'a> {
     }
 
     fn register_path(name: &String, paths: &mut PathMap, pd: &PathData) {
-        // todo: finish committing to map
         println!("registering path: {}", name);
-        let args = &pd.arguments;
-        let fnc = |t: u64, args: Vec<f64>| {};
-        println!("{:?}", args);
+        paths.insert(name.clone(), pd.clone());
     }
 
     fn register_pattern(name: &String, patterns: &mut PatternMap, pd: &PatternData) {
@@ -96,9 +98,13 @@ impl<'a> Interpreter<'a> {
 
     pub fn spawn_direct(&mut self, entity: &Entity) {
         self.entities.push(ExecutionEnvironment::new(entity));
-        if let Some(new_actions) =
-            entity.compile_behavior(&self.paths, &self.patterns, &self.prefabs, self.fps)
-        {
+        if let Some(new_actions) = entity.compile_behavior(
+            &self.paths,
+            &self.patterns,
+            &self.prefabs,
+            &self.bullets,
+            self.fps,
+        ) {
             self.actions.push(Some(new_actions));
         } else {
             println!("entity made no further actions -- empty in array!");
@@ -111,6 +117,60 @@ impl<'a> Interpreter<'a> {
             .push(ExecutionEnvironment::new(&self.prefabs[&name]));
     }
 
+    pub fn move_entities(exec: &mut Vec<ExecutionEnvironment>, paths: &PathMap, fps: u16) {
+        let get_primitive = |var: String, path: &PathData, vals: &Values| {
+            path.definitions
+                .get(&var)
+                .unwrap()
+                .clone()
+                .eval(&vals)
+                .unwrap()
+        };
+        let extract_numeric = |primitive: Primitive| -> f64 {
+            return match primitive {
+                Primitive::I64(i) => i as f64,
+                Primitive::F64(f) => f,
+                _ => 0.0,
+            };
+        };
+        for environment in exec {
+            // is it rotation/speed or hard set pos/vel?
+            // precedence:
+            //   position_fn exists
+            //   velocity_fn exists (set velocity, resolve position per frame)
+            //   speed/rotation exist, resolve velocity, then resolve position from velocity
+            //   resolve position from velocity
+            let mut vals: Values = HashMap::new();
+            vals.insert(
+                "t".to_string(),
+                ExpressionType::Int(environment.elapsed as i64),
+            );
+            if let Some(pos_fn) = &environment.entity.position_fn {
+                if let Some(path) = paths.get(pos_fn) {
+                    let x = extract_numeric(get_primitive("x".to_string(), path, &vals));
+                    let y = extract_numeric(get_primitive("y".to_string(), path, &vals));
+                    environment.entity.position = Vector2::new(x, y);
+                }
+            } else {
+                if let Some(speed) = &environment.entity.speed {
+                    let x = *speed * environment.entity.rotation.cos() as f64;
+                    let y = *speed * environment.entity.rotation.sin() as f64;
+                    environment.entity.velocity = Vector2::new(x, y);
+                }
+                if let Some(vel_fn) = &environment.entity.velocity_fn {
+                    if let Some(path) = paths.get(vel_fn) {
+                        let x = extract_numeric(get_primitive("x".to_string(), path, &vals));
+                        let y = extract_numeric(get_primitive("y".to_string(), path, &vals));
+                        environment.entity.velocity = Vector2::new(x, y);
+                    }
+                }
+
+                environment.entity.position += environment.entity.velocity * (1.0 / fps as f64);
+            }
+            environment.elapsed += 1;
+        }
+    }
+
     pub fn step(&mut self) {
         // collect all new emplacements per frame
         println!("WORLD STEP\n---------");
@@ -120,7 +180,8 @@ impl<'a> Interpreter<'a> {
         let mut batched_deletions: Vec<usize> = Vec::new();
 
         // move current entity according to velocity rules
-        for i in 0..self.entities.len() {}
+
+        Interpreter::move_entities(&mut self.entities, &mut self.paths, self.fps);
 
         // step behavior of each adding new ents to pool: spawns, subpatterns
         println!(
@@ -130,6 +191,11 @@ impl<'a> Interpreter<'a> {
         );
         for i in 0..self.entities.len() {
             let mut removed_callback_indices: Vec<usize> = Vec::new();
+            // lifetime outlives, remove and don't check actions
+            if self.entities[i].duration <= self.entities[i].elapsed {
+                batched_deletions.push(i);
+                continue;
+            }
             match &mut self.actions[i] {
                 Some(actions) => {
                     for callback_index in 0..actions.len() {
@@ -142,6 +208,7 @@ impl<'a> Interpreter<'a> {
                                 &self.paths,
                                 &self.patterns,
                                 &self.prefabs,
+                                &self.bullets,
                             );
                             match result {
                                 CallbackResult::AddEntities(ents) => {
@@ -153,6 +220,7 @@ impl<'a> Interpreter<'a> {
                                             &self.paths,
                                             &self.patterns,
                                             &self.prefabs,
+                                            &self.bullets,
                                             self.fps,
                                         );
                                         pooled_new_actions.push(new_actions);
