@@ -54,8 +54,8 @@ fn main() {
         let pattern_name = &args[3];
 
         let e = Entity {
-            position: Vector2 { x: 20.0, y: 20.0 },
-            velocity: Vector2 { x: 0.0, y: 20.0 },
+            position: Vector2 { x: 300.0, y: 20.0 },
+            velocity: Vector2 { x: 0.0, y: 0.0 },
             rotation: Deg(0.0),
             speed: Some(20.0),
             lifetime: 600,

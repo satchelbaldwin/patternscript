@@ -3,7 +3,7 @@ bullet mid_sized = {
      hitbox = (4, 4);
      shape = "rectangle";
      color = (255, 255, 0);
-     lifetime = 400;
+     lifetime = 120;
 }
 
 path downward_s_curve(t, speed, offset) = {
@@ -13,30 +13,37 @@ path downward_s_curve(t, speed, offset) = {
 
 pattern phase1 = {
      iteration_type = time;          // time instead of a cycle count
-     length = 6.0 seconds;           // time in seconds or frames
+     length = 50.0 seconds;           // time in seconds or frames
      actions = {
           origin = entity_position + (0, 20);
 
-          for (n = 0...5) {
+          for (n = 0...100) {
                angle = towards_player;
                spawn {
                     type = mid_sized;
                     position = origin;
-                    rotation = angle + n * 20;        // should handle precedence correctly here
-                    speed = 200;
+                    rotation = angle + n;        // should handle precedence correctly here
+                    speed = 500;
+                    lifetime = 120;
                }
-               wait 4 frames;
-          }
-          wait 0.5 seconds;
-
-          for (i = 0...3, j = 0...3) unless (i == 1 and j == 1) {
                spawn {
                     type = mid_sized;
-                    lifetime = 800;
-                    position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))); 
+                    position = origin;
+                    rotation = angle - n;        // should handle precedence correctly here
+                    speed = 500;
                }
+               wait 1 frames;
           }
-          wait 0.5 seconds;
+          wait 5 frames;
+
+          //for (i = 0...3, j = 0...3) unless (i == 1 and j == 1) {
+          //     spawn {
+          //          type = mid_sized;
+          //          lifetime = 800;
+          //          position_fn = downward_s_curve(t, 200, (entity_position + ((i - 1) * 80, (j - 1) * 80))); 
+          //     }
+          //}
+          //wait 5 frames;
      }
 }
 

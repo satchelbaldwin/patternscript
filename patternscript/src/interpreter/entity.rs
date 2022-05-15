@@ -196,6 +196,7 @@ impl<'a> Entity {
         entity.instance_vars = instance_vals.clone();
         if let Some(ref mut iv) = entity.instance_vars {
             iv.extend(globals.clone());
+            values.extend(iv.clone());
         }
 
         // bullet prefab data

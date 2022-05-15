@@ -108,7 +108,6 @@ impl<'a> Interpreter<'a> {
         ) {
             self.actions.push(Some(new_actions));
         } else {
-            println!("entity made no further actions -- empty in array!");
             self.actions.push(None);
         }
     }
@@ -120,7 +119,6 @@ impl<'a> Interpreter<'a> {
 
     pub fn move_entities(exec: &mut Vec<ExecutionEnvironment>, fps: u16) {
         let get_primitive = |var: String, vals: &Values| -> Primitive {
-            println!("{:?}", vals);
             vals.get(&var).unwrap().clone().eval(&vals).unwrap()
         };
         let extract_numeric = |primitive: Primitive| -> f64 {
@@ -160,7 +158,7 @@ impl<'a> Interpreter<'a> {
 
             if let Some(pos_fn) = &environment.entity.position_fn {
                 let mut fn_with_globals = pos_fn.clone();
-                fn_with_globals.extend(vals.clone());
+                fn_with_globals.extend(vals);
                 let x = extract_numeric(get_primitive("x".to_string(), &fn_with_globals));
                 let y = extract_numeric(get_primitive("y".to_string(), &fn_with_globals));
                 environment.entity.position = Vector2::new(x, y);
@@ -172,7 +170,7 @@ impl<'a> Interpreter<'a> {
                 }
                 if let Some(vel_fn) = &environment.entity.velocity_fn {
                     let mut fn_with_globals = vel_fn.clone();
-                    fn_with_globals.extend(vals.clone());
+                    fn_with_globals.extend(vals);
                     let x = extract_numeric(get_primitive("x".to_string(), &fn_with_globals));
                     let y = extract_numeric(get_primitive("y".to_string(), &fn_with_globals));
                     environment.entity.velocity = Vector2::new(x, y);
@@ -180,13 +178,13 @@ impl<'a> Interpreter<'a> {
 
                 environment.entity.position += environment.entity.velocity * (1.0 / fps as f64);
             }
-            environment.elapsed += 1;
+            //environment.elapsed += 1;
         }
     }
 
     fn angle_towards_player() -> ExpressionType {
         // todo: no player
-        ExpressionType::Float(17.0)
+        ExpressionType::Float(0.0)
     }
 
     fn entity_pos_as_expr(entity_position: Vector2<f64>) -> ExpressionType {
@@ -212,8 +210,6 @@ impl<'a> Interpreter<'a> {
 
     pub fn step(&mut self) {
         // collect all new emplacements per frame
-        println!("WORLD STEP\n---------");
-
         let mut pooled_new_actions: Actions = Vec::new();
         let mut pooled_new_entities: Vec<ExecutionEnvironment> = Vec::new();
         let mut batched_deletions: Vec<usize> = Vec::new();
@@ -222,11 +218,6 @@ impl<'a> Interpreter<'a> {
         Interpreter::move_entities(&mut self.entities, self.fps);
 
         // step behavior of each adding new ents to pool: spawns, subpatterns
-        println!(
-            "entities and actions: {} {}",
-            self.entities.len(),
-            self.actions.len(),
-        );
         for i in 0..self.entities.len() {
             let mut removed_callback_indices: Vec<usize> = Vec::new();
             // lifetime outlives, remove and don't check actions
@@ -239,7 +230,6 @@ impl<'a> Interpreter<'a> {
                     for callback_index in 0..actions.len() {
                         let callback = &actions[callback_index];
                         if callback.frame <= self.entities[i].elapsed {
-                            println!("running callback for ent {} on frame {}", i, callback.frame);
                             removed_callback_indices.push(callback_index);
                             let result = (*callback.func.0)(
                                 &mut self.entities[i],
@@ -250,9 +240,7 @@ impl<'a> Interpreter<'a> {
                             );
                             match result {
                                 CallbackResult::AddEntities(ents) => {
-                                    println!("callback returned entities: {}", ents.len());
                                     for ent in &ents {
-                                        println!("  adding ent: {:?}\n--", ent);
                                         let globals = Interpreter::create_globals(
                                             self.entities[i].entity.position,
                                         );
@@ -274,7 +262,6 @@ impl<'a> Interpreter<'a> {
                         }
                     }
                     // remove singular entity's spent callbacks and advance its lifetime
-                    println!("callbacks to remove: {:?}", removed_callback_indices);
                     swap_remove_all(actions, &removed_callback_indices);
                     self.entities[i].elapsed += 1;
                 }
@@ -282,9 +269,6 @@ impl<'a> Interpreter<'a> {
             }
         }
         // sweep the marked dead entities -- a dead entity can have no callbacks
-        println!("batched deletions: {:?}", batched_deletions);
-        println!("batched additions: {:?}", pooled_new_entities);
-        println!("batched additions: {:?}", pooled_new_actions);
         swap_remove_all(&mut self.entities, &batched_deletions);
         swap_remove_all(&mut self.actions, &batched_deletions);
         // add pool to current
